@@ -12062,6 +12062,13 @@ public final class Settings {
         public static final String ENABLED_VR_LISTENERS = "enabled_vr_listeners";
 
         /**
+         * Enable udfps detection even when screen is off
+         * Default value is 0
+         * @hide
+         */
+        public static final String SCREEN_OFF_UDFPS_ENABLED = "screen_off_udfps_enabled";
+
+        /**
          * Behavior of the display while in VR mode.
          *
          * One of {@link #VR_DISPLAY_MODE_LOW_PERSISTENCE} or {@link #VR_DISPLAY_MODE_OFF}.
