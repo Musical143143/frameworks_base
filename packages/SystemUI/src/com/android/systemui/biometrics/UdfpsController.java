@@ -1232,6 +1232,10 @@ private static void xaiomiTouchFeature(int arg) {
         xiaomiFingerprintExtension(0);
     }
 
+    public boolean isAnimationEnabled() {
+        return mUdfpsAnimation != null && mUdfpsAnimation.isAnimationEnabled();
+    }
+
     /**
      * Callback for fingerUp and fingerDown events.
      */
