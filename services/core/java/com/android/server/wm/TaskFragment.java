@@ -1502,6 +1502,8 @@ class TaskFragment extends WindowContainer<WindowContainer> {
                 // Send interaction hint to boost onDraw performance
                 if (mPowerManagerInternal != null) {
                     mPowerManagerInternal.setPowerBoost(Boost.INTERACTION, 80);
+                if (next != null) {
+                    doActivityBoost();
                 }
             }
         }
@@ -1695,6 +1697,13 @@ class TaskFragment extends WindowContainer<WindowContainer> {
         }
 
         return true;
+    }
+
+    protected void doActivityBoost() {
+        PowerManagerInternal mPowerManagerInternal = LocalServices.getService(PowerManagerInternal.class);
+        if (mPowerManagerInternal != null) {
+            mPowerManagerInternal.setPowerBoost(Boost.DISPLAY_UPDATE_IMMINENT, 80);
+        }
     }
 
     boolean shouldSleepOrShutDownActivities() {
