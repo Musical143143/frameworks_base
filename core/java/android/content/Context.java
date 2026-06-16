@@ -4921,6 +4921,16 @@ public abstract class Context {
 
     /**
      * Use with {@link #getSystemService(String)} to retrieve a
+     * {@link android.app.magicos.MagicOsAiManager} for handling Honor MagicOS
+     * ported deep AI processing pipelines and bridging APIs.
+     * @hide
+     */
+    public static final String MAGICOS_AI_SERVICE = "magicos_ai_core";
+
+
+
+    /**
+     * Use with {@link #getSystemService(String)} to retrieve a
      * {@link android.os.PowerStatsService} for accessing power stats
      * service.
      *

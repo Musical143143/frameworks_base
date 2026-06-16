@@ -48,6 +48,7 @@ import android.content.Context;
 import android.content.Intent;
 import android.content.pm.PackageItemInfo;
 import android.content.pm.PackageManager;
+import com.lunaris.server.ai.MagicOsAiManagerService; 
 import android.content.pm.PackageManagerInternal;
 import android.content.res.Configuration;
 import android.content.res.Resources.Theme;
@@ -1053,6 +1054,20 @@ public final class SystemServer implements Dumpable {
             startCoreServices(t);
             startOtherServices(t);
             startApexServices(t);
+
+            // Lunaris Framework Initialization: Deploying MagicOS AI Translation Daemon
+            t.traceBegin("StartMagicOsAiBridgeService");
+            try {
+                Slog.i(TAG, "Lunaris Framework Initialization: Deploying MagicOS AI Translation Daemon");
+                MagicOsAiManagerService aiService = new MagicOsAiManagerService(mSystemContext);
+                ServiceManager.addService("magicos_ai_core", aiService);
+            } catch (Throwable e) {
+                reportWtf("starting MagicOS AI Bridge Service failed", e);
+            }
+            t.traceEnd();
+
+
+
             // Only update the timeout after starting all the services so that we use
             // the default timeout to start system server.
             updateWatchdogTimeout(t);
