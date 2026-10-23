@@ -33,7 +33,7 @@ import com.android.systemui.statusbar.notification.row.ExpandableNotificationRow
 import java.util.List;
 
 /**
- * "Stacked card" look for collapsed notification groups: up to two extra card layers peek out
+ * "Stacked card" look for collapsed notification stacks: up to two extra card layers peek out
  * from underneath the group summary, hinting that more notifications are hidden inside it.
  *
  * The peek layers are drawn by {@link ExpandableNotificationRow} into extra space that
@@ -77,6 +77,11 @@ public final class NotificationStackPeek {
                 .getBoolean(R.bool.config_notificationStackPeekDefault);
         sEnabled = Settings.System.getIntForUser(context.getContentResolver(), SETTING_KEY,
                 def ? 1 : 0, UserHandle.USER_CURRENT) != 0;
+    }
+
+    /** Whether stacked notifications are turned on (the Settings toggle). */
+    public static boolean isEnabled() {
+        return sEnabled;
     }
 
     /** Number of peek layers (0..2) to show below this view. */

@@ -75,6 +75,7 @@ import com.android.systemui.statusbar.notification.collection.listbuilder.plugga
 import com.android.systemui.statusbar.notification.collection.notifcollection.CollectionReadyForBuildListener;
 import com.android.systemui.statusbar.notification.shared.NotificationBundleUi;
 import com.android.systemui.statusbar.notification.stack.NotificationPriorityBucketKt;
+import com.android.systemui.statusbar.notification.stack.NotificationStackPeek;
 import com.android.systemui.util.Assert;
 import com.android.systemui.util.NamedListenerSet;
 import com.android.systemui.util.time.SystemClock;
@@ -715,7 +716,88 @@ public class ShadeListBuilder implements Dumpable, PipelineDumpable {
                 }
             }
         }
+        if (!NotificationBundleUi.isEnabled() && NotificationStackPeek.isEnabled()) {
+            stackSameAppNotifs(out);
+        }
         Trace.endSection();
+    }
+
+    /**
+     * Lunaris: stacks the ungrouped notifications of each app, so the stacked-card look works for
+     * every app and not only for apps that set group keys. The newest notification becomes the
+     * stack's summary and the others become its children, which stay hidden until the stack is
+     * expanded. Ongoing notifications and an app's own groups are left alone.
+     */
+    private void stackSameAppNotifs(List<PipelineEntry> out) {
+        final Map<String, List<NotificationEntry>> byApp = new ArrayMap<>();
+        for (PipelineEntry pipelineEntry : out) {
+            if (pipelineEntry instanceof NotificationEntry entry) {
+                final String stackKey = getAppStackKey(entry);
+                if (stackKey != null) {
+                    byApp.computeIfAbsent(stackKey, k -> new ArrayList<>()).add(entry);
+                }
+            }
+        }
+
+        final Map<String, GroupEntry> stacks = new ArrayMap<>();
+        for (Map.Entry<String, List<NotificationEntry>> app : byApp.entrySet()) {
+            final List<NotificationEntry> entries = app.getValue();
+            if (entries.size() < 2) {
+                continue;
+            }
+            entries.sort(Comparator.comparingLong(
+                    (NotificationEntry e) -> e.getSbn().getPostTime()).reversed());
+            GroupEntry stack = mGroups.get(app.getKey());
+            if (stack == null) {
+                stack = new GroupEntry(app.getKey(), mSystemClock.elapsedRealtime());
+                mGroups.put(app.getKey(), stack);
+            }
+            stack.setParent(ROOT_ENTRY);
+            for (int i = 0; i < entries.size(); i++) {
+                final NotificationEntry entry = entries.get(i);
+                entry.setParent(stack);
+                if (i == 0) {
+                    stack.setSummary(entry);
+                } else {
+                    stack.addChild(entry);
+                }
+            }
+            stacks.put(app.getKey(), stack);
+        }
+        if (stacks.isEmpty()) {
+            return;
+        }
+
+        // Put each stack where its first (highest) entry was, and drop the entries it absorbed.
+        final List<PipelineEntry> result = new ArrayList<>(out.size());
+        final Set<String> added = new ArraySet<>();
+        for (PipelineEntry pipelineEntry : out) {
+            String stackKey = null;
+            if (pipelineEntry instanceof NotificationEntry entry) {
+                stackKey = getAppStackKey(entry);
+            }
+            final GroupEntry stack = stackKey == null ? null : stacks.get(stackKey);
+            if (stack == null) {
+                result.add(pipelineEntry);
+            } else if (added.add(stackKey)) {
+                result.add(stack);
+            }
+        }
+        out.clear();
+        out.addAll(result);
+    }
+
+    /** Stack key for an ungrouped notification of an app, or null if it must not be stacked. */
+    private static String getAppStackKey(NotificationEntry entry) {
+        final StatusBarNotification sbn = entry.getSbn();
+        if (sbn.isGroup() || sbn.isOngoing() || sbn.getNotification().isGroupSummary()) {
+            return null;
+        }
+        return APP_STACK_KEY_PREFIX + sbn.getUser().getIdentifier() + ":" + sbn.getPackageName();
+    }
+
+    private static boolean isAppStack(GroupEntry group) {
+        return group.getKey().startsWith(APP_STACK_KEY_PREFIX);
     }
 
     private @Nullable NotificationEntry getAutogroupSummary(NotificationEntry newSummary,
@@ -1041,7 +1123,7 @@ public class ShadeListBuilder implements Dumpable, PipelineDumpable {
             pruneGroupAtIndexAndPromoteAnyChildren(parent, siblings, group, i, "no summary",
                     shadeList);
 
-        } else if (children.size() < MIN_CHILDREN_FOR_GROUP) {
+        } else if (children.size() < MIN_CHILDREN_FOR_GROUP && !isAppStack(group)) {
             // This group has a summary and insufficient, but nonzero children.
             checkState(hasSummary, "group must have summary at this point");
             checkState(!children.isEmpty(), "empty group should have been promoted");
@@ -1952,6 +2034,9 @@ public class ShadeListBuilder implements Dumpable, PipelineDumpable {
     };
 
     private static final int MIN_CHILDREN_FOR_GROUP = 2;
+
+    /** Group key prefix for stacks built from the ungrouped notifications of one app. */
+    private static final String APP_STACK_KEY_PREFIX = "lunaris_app_stack:";
 
     private static final String TAG = "ShadeListBuilder";
 }
