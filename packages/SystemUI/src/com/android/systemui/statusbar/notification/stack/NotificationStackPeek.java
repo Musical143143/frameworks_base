@@ -125,6 +125,8 @@ public final class NotificationStackPeek {
         final int baseColor = row.getBackgroundColorWithoutTint();
         final int bottom = row.getActualHeight() - row.getClipBottomAmount();
 
+        canvas.save();
+        canvas.clipRect(0f, bottom, row.getWidth(), bottom + step * layers + radius);
         for (int i = layers; i >= 1; i--) {
             // Further layers are slightly darker and more transparent.
             final float fade = 1f - 0.25f * i;
@@ -136,5 +138,6 @@ public final class NotificationStackPeek {
             tmp.set(left, bottom - radius, right, bottom + step * i);
             canvas.drawRoundRect(tmp, radius, radius, paint);
         }
+        canvas.restore();
     }
 }
