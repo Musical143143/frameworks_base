@@ -24,6 +24,8 @@ import android.graphics.Canvas
 import android.graphics.Color
 import android.graphics.Paint
 import android.graphics.Point
+import android.os.UserHandle
+import android.provider.Settings
 import android.util.AttributeSet
 import android.view.View
 import android.view.animation.PathInterpolator
@@ -51,6 +53,7 @@ class AuthRippleView(context: Context?, attrs: AttributeSet?) : View(context, at
 
     private var drawDwell: Boolean = false
     private var drawRipple: Boolean = false
+    private var drawWater: Boolean = false
 
     private var lockScreenColorVal = Color.WHITE
     private val fadeDuration = 83L
@@ -59,6 +62,8 @@ class AuthRippleView(context: Context?, attrs: AttributeSet?) : View(context, at
     private val dwellPaint = Paint()
     private val rippleShader = RippleShader()
     private val ripplePaint = Paint()
+    private val waterShader = WaterRippleShader()
+    private val waterPaint = Paint()
     private var unlockedRippleAnimator: Animator? = null
     private var fadeDwellAnimator: Animator? = null
     private var retractDwellAnimator: Animator? = null
@@ -90,6 +95,8 @@ class AuthRippleView(context: Context?, attrs: AttributeSet?) : View(context, at
         rippleShader.sparkleStrength = RIPPLE_SPARKLE_STRENGTH
         updateRippleFadeParams()
         ripplePaint.shader = rippleShader
+        waterPaint.shader = waterShader
+        waterPaint.isAntiAlias = false
         setLockScreenColor(Utils.getColorAttr(context,
                 android.R.attr.colorAccent).defaultColor) // default color
 
@@ -265,6 +272,11 @@ class AuthRippleView(context: Context?, attrs: AttributeSet?) : View(context, at
     fun startUnlockedRipple(onAnimationEnd: Runnable?) {
         unlockedRippleAnimator?.cancel()
 
+        if (isWaterRippleEnabled()) {
+            startWaterRipple(onAnimationEnd)
+            return
+        }
+
         val rippleAnimator = ValueAnimator.ofFloat(0f, 1f).apply {
             duration = AuthRippleController.RIPPLE_ANIMATION_DURATION
             addUpdateListener { animator ->
@@ -292,6 +304,90 @@ class AuthRippleView(context: Context?, attrs: AttributeSet?) : View(context, at
             })
         }
         unlockedRippleAnimator?.start()
+    }
+
+    private fun isWaterRippleEnabled(): Boolean =
+        Settings.System.getIntForUser(
+            context.contentResolver, SETTING_FOD_UNLOCK_ANIM, 0, UserHandle.USER_CURRENT
+        ) == FOD_ANIM_WATER
+
+    private fun readBool(key: String, def: Boolean): Boolean =
+        Settings.System.getIntForUser(
+            context.contentResolver, key, if (def) 1 else 0, UserHandle.USER_CURRENT
+        ) != 0
+
+    /**
+     * Real water waves travelling out from the sensor (see [WaterRippleShader]).
+     *
+     * Smoothness notes: time comes from the animator play time (not a frame counter), the wave
+     * amplitude fades in over [WATER_FADE_IN_MS] and out over the last part of the animation so the
+     * surface is exactly flat (fully transparent) when the view is hidden, and the whole view is
+     * drawn as one rect, so there is no mask edge that could pop.
+     */
+    private fun startWaterRipple(onAnimationEnd: Runnable?) {
+        val fullscreen = readBool(SETTING_FOD_WATER_FULLSCREEN, false)
+        val highFrameRate = readBool(SETTING_FOD_WATER_HFR, true)
+        val w = width.toFloat().coerceAtLeast(1f)
+        val h = height.toFloat().coerceAtLeast(1f)
+        val density = resources.displayMetrics.density
+        val durationMs = if (fullscreen) WATER_DURATION_FULLSCREEN_MS else WATER_DURATION_MS
+        val farthest = maxOf(
+            Math.hypot(origin.x.toDouble(), origin.y.toDouble()),
+            Math.hypot((w - origin.x).toDouble(), origin.y.toDouble()),
+            Math.hypot(origin.x.toDouble(), (h - origin.y).toDouble()),
+            Math.hypot((w - origin.x).toDouble(), (h - origin.y).toDouble())
+        ).toFloat()
+
+        waterShader.setOrigin(origin.x.toFloat(), origin.y.toFloat())
+        waterShader.setSize(w, h)
+        waterShader.wavelength = WATER_WAVELENGTH_DP * density
+        waterShader.fullscreen = fullscreen
+        waterShader.speed = if (fullscreen) {
+            Math.hypot(w.toDouble(), h.toDouble()).toFloat() * WATER_FULLSCREEN_SPEED_DIAGS_PER_S
+        } else {
+            farthest / (durationMs / 1000f * WATER_REACH_FRACTION)
+        }
+        waterShader.time = 0f
+        waterShader.fade = 0f
+
+        val animator = ValueAnimator.ofFloat(0f, 1f).apply {
+            duration = durationMs
+            interpolator = Interpolators.LINEAR
+            addUpdateListener { a ->
+                val tMs = a.currentPlayTime.toFloat()
+                val fadeIn = smooth(tMs / WATER_FADE_IN_MS)
+                val fadeOut = 1f - smooth((tMs - durationMs * WATER_FADE_OUT_START) /
+                        (durationMs * (1f - WATER_FADE_OUT_START)))
+                waterShader.time = tMs / 1000f
+                waterShader.fade = fadeIn * fadeOut
+                invalidate()
+            }
+            addListener(object : AnimatorListenerAdapter() {
+                override fun onAnimationStart(animation: Animator) {
+                    drawWater = true
+                    visibility = VISIBLE
+                    if (highFrameRate) {
+                        setRequestedFrameRate(REQUESTED_FRAME_RATE_CATEGORY_HIGH)
+                    }
+                }
+
+                override fun onAnimationEnd(animation: Animator) {
+                    drawWater = false
+                    setRequestedFrameRate(REQUESTED_FRAME_RATE_CATEGORY_DEFAULT)
+                    visibility = GONE
+                    unlockedRippleAnimator = null
+                    onAnimationEnd?.run()
+                }
+            })
+        }
+        unlockedRippleAnimator = animator
+        animator.start()
+    }
+
+    /** Smoothstep on a 0..1 clamped input. */
+    private fun smooth(x: Float): Float {
+        val t = x.coerceIn(0f, 1f)
+        return t * t * (3f - 2f * t)
     }
 
     fun setLockScreenColor(color: Int) {
@@ -343,9 +439,28 @@ class AuthRippleView(context: Context?, attrs: AttributeSet?) : View(context, at
                     maskRadius, dwellPaint)
         }
 
+        if (drawWater) {
+            canvas.drawRect(0f, 0f, width.toFloat(), height.toFloat(), waterPaint)
+        }
+
         if (drawRipple) {
             canvas?.drawCircle(origin.x.toFloat(), origin.y.toFloat(),
                     rippleShader.rippleSize.currentWidth, ripplePaint)
         }
     }
 }
+
+private const val SETTING_FOD_UNLOCK_ANIM = "lunaris_fod_unlock_anim" // 0 = default, 1 = water
+private const val SETTING_FOD_WATER_HFR = "lunaris_fod_water_hfr" // default on
+private const val SETTING_FOD_WATER_FULLSCREEN = "lunaris_fod_water_fullscreen" // default off
+private const val FOD_ANIM_WATER = 1
+
+private const val WATER_DURATION_MS = 2200L
+private const val WATER_DURATION_FULLSCREEN_MS = 3600L
+private const val WATER_FADE_IN_MS = 140f
+private const val WATER_FADE_OUT_START = 0.62f
+private const val WATER_WAVELENGTH_DP = 38f
+// Share of the animation the wave front needs to reach the farthest corner.
+private const val WATER_REACH_FRACTION = 0.72f
+// Fullscreen mode: front speed in screen diagonals per second.
+private const val WATER_FULLSCREEN_SPEED_DIAGS_PER_S = 0.42f
