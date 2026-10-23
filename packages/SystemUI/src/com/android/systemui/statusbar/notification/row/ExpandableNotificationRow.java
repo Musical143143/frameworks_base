@@ -142,6 +142,7 @@ import com.android.systemui.Dependency;
 import com.android.systemui.statusbar.notification.stack.AmbientState;
 import com.android.systemui.statusbar.notification.stack.AnimationProperties;
 import com.android.systemui.statusbar.notification.stack.AxAmbientStateEx;
+import com.android.systemui.statusbar.notification.stack.NotificationStackPeek;
 import com.android.systemui.statusbar.notification.stack.ExpandableViewState;
 import com.android.systemui.statusbar.notification.stack.MagneticRowListener;
 import com.android.systemui.statusbar.notification.stack.NotificationChildrenContainer;
@@ -311,6 +312,9 @@ public class ExpandableNotificationRow extends ActivatableNotificationView
     private boolean mChildrenExpanded;
     private boolean mIsSummaryWithChildren;
     private NotificationChildrenContainer mChildrenContainer;
+    private final android.graphics.Paint mStackPeekPaint =
+            new android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG);
+    private final android.graphics.RectF mStackPeekRect = new android.graphics.RectF();
     private NotificationMenuRowPlugin mMenuRow;
     private ViewStub mGutsStub;
     private boolean mIsSystemChildExpanded;
@@ -4620,6 +4624,9 @@ public class ExpandableNotificationRow extends ActivatableNotificationView
                         axAmbientStateEx.getSkipDrawNotificationRowCount() + 1);
                 return;
             }
+        }
+        if (getParent() instanceof NotificationStackScrollLayout && !mExpandAnimationRunning) {
+            NotificationStackPeek.draw(this, canvas, mStackPeekPaint, mStackPeekRect);
         }
         canvas.save();
         if (mExpandingClipPath != null && (mExpandAnimationRunning || mChildIsExpanding)) {

@@ -547,7 +547,9 @@ constructor(
         if (currentIndex == 0) {
             return 0f
         }
-        return stack.calculateGapHeight(previous, current, currentIndex) + dividerHeight
+        return stack.calculateGapHeight(previous, current, currentIndex) +
+            dividerHeight +
+            NotificationStackPeek.getExtraHeight(previous)
     }
 
     private fun NotificationStackScrollLayout.showableChildren() =

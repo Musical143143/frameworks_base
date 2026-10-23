@@ -2321,4 +2321,9 @@
 
     <dimen name="wifi_standard_spacer_width">1sp</dimen>
 
+
+    <!-- Lunaris: vertical space each stacked-card peek layer adds below a collapsed group -->
+    <dimen name="notification_stack_peek_step">6dp</dimen>
+    <!-- Lunaris: horizontal inset per peek layer -->
+    <dimen name="notification_stack_peek_inset">12dp</dimen>
 </resources>

@@ -715,6 +715,7 @@ public class NotificationStackScrollLayout
                 Flags.LOCKSCREEN_ENABLE_LANDSCAPE);
         mDebugLines = mFeatureFlags.isEnabled(Flags.NSSL_DEBUG_LINES);
         mDebugRemoveAnimation = mFeatureFlags.isEnabled(Flags.NSSL_DEBUG_REMOVE_ANIMATION);
+        NotificationStackPeek.init(context);
         mSectionsManager = Dependency.get(NotificationSectionsManager.class);
         mSectionsManager.initialize(this);
         mSections = mSectionsManager.createSectionsForBuckets();
@@ -3521,6 +3522,7 @@ public class NotificationStackScrollLayout
                 if (position != scrimTopPadding) {
                     if (lastVisibleChild != null) {
                         position += calculateGapHeight(lastVisibleChild, child, visibleIndex);
+                        position += NotificationStackPeek.getExtraHeight(lastVisibleChild);
                     }
                     position += mPaddingBetweenElements;
                 }

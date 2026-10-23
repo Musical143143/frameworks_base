@@ -555,7 +555,8 @@ public class StackScrollAlgorithm {
             }
             currentY = currentY
                     + getMaxAllowedChildHeight(view)
-                    + mPaddingBetweenElements;
+                    + mPaddingBetweenElements
+                    + NotificationStackPeek.getExtraHeight(view);
         }
     }
 
@@ -815,10 +816,12 @@ public class StackScrollAlgorithm {
             }
         }
 
+        final int stackPeekExtra = NotificationStackPeek.getExtraHeight(view);
         algorithmState.mCurrentYPosition +=
-                expansionFraction * (getMaxAllowedChildHeight(view) + mPaddingBetweenElements);
+                expansionFraction * (getMaxAllowedChildHeight(view) + mPaddingBetweenElements
+                        + stackPeekExtra);
         algorithmState.mCurrentExpandedYPosition += view.getIntrinsicHeight()
-                + mPaddingBetweenElements;
+                + mPaddingBetweenElements + stackPeekExtra;
 
         setLocation(view.getViewState(), algorithmState.mCurrentYPosition, i);
         viewState.setYTranslation(viewState.getYTranslation() + stackTop);

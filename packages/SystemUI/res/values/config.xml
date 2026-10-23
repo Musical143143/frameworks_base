@@ -1187,4 +1187,8 @@
 
     <!-- Indicates whether the tapping to open qs panel is supported -->
     <bool name="config_statusBarTapToExpandShade">false</bool>
+
+    <!-- Lunaris: show stacked-card peek layers under collapsed notification groups.
+         Overridden at runtime by Settings.System "lunaris_notification_stack_peek". -->
+    <bool name="config_notificationStackPeekDefault">true</bool>
 </resources>
