@@ -342,6 +342,8 @@ class AuthRippleView(context: Context?, attrs: AttributeSet?) : View(context, at
         waterShader.setSize(w, h)
         waterShader.wavelength = WATER_WAVELENGTH_DP * density
         waterShader.fullscreen = fullscreen
+        // Fullscreen waves travel much further, so they lose energy more slowly.
+        waterShader.decay = if (fullscreen) WATER_DECAY_FULLSCREEN else WATER_DECAY
         waterShader.speed = if (fullscreen) {
             Math.hypot(w.toDouble(), h.toDouble()).toFloat() * WATER_FULLSCREEN_SPEED_DIAGS_PER_S
         } else {
@@ -460,6 +462,8 @@ private const val WATER_DURATION_FULLSCREEN_MS = 3600L
 private const val WATER_FADE_IN_MS = 140f
 private const val WATER_FADE_OUT_START = 0.62f
 private const val WATER_WAVELENGTH_DP = 38f
+private const val WATER_DECAY = 1.0f
+private const val WATER_DECAY_FULLSCREEN = 0.6f
 // Share of the animation the wave front needs to reach the farthest corner.
 private const val WATER_REACH_FRACTION = 0.72f
 // Fullscreen mode: front speed in screen diagonals per second.
