@@ -16,7 +16,10 @@
 
 package com.android.systemui.statusbar.featurepods.media.ui.viewmodel
 
+import android.content.Context
 import androidx.compose.runtime.getValue
+import com.android.systemui.dagger.qualifiers.Application
+import com.android.systemui.media.controls.ui.LunarisMusicSettings
 import com.android.systemui.common.shared.model.ContentDescription
 import com.android.systemui.common.shared.model.Icon
 import com.android.systemui.lifecycle.ExclusiveActivatable
@@ -44,6 +47,7 @@ import java.util.Locale
 class MediaControlChipViewModel
 @AssistedInject
 constructor(
+    @Application private val context: Context,
     mediaControlChipInteractor: MediaControlChipInteractor,
 ) : StatusBarPopupChipViewModel, ExclusiveActivatable() {
     private val hydrator: Hydrator = Hydrator("MediaControlChipViewModel.hydrator")
@@ -69,6 +73,15 @@ constructor(
     }
 
     private fun toPopupChipModel(model: MediaControlChipModel?, useWaveform: Boolean): PopupChipModel {
+        if (!LunarisMusicSettings.shouldShowMusicChip(context)) {
+            return PopupChipModel.Hidden(PopupChipId.MediaControl)
+        }
+
+        if (model != null && LunarisMusicSettings.shouldHidePausedPlayer(context)
+                && !model.isPlaying) {
+            return PopupChipModel.Hidden(PopupChipId.MediaControl)
+        }
+
         if (model == null || model.songName.isNullOrEmpty()) {
             return PopupChipModel.Hidden(PopupChipId.MediaControl)
         }

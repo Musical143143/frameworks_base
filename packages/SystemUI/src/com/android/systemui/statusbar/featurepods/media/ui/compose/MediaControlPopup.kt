@@ -24,7 +24,14 @@ import android.widget.SeekBar
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.keyframes
+import androidx.compose.animation.core.LinearEasing
+import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.gestures.detectTapGestures
@@ -84,7 +91,12 @@ import com.android.systemui.statusbar.featurepods.popups.ui.compose.PopupSurface
 import kotlinx.coroutines.delay
 
 private val PopupShape = RoundedCornerShape(34.dp)
-private val ArtworkShape = RoundedCornerShape(24.dp)
+
+private fun lunarisArtworkShape(shape: Int) = when (shape) {
+    0 -> CircleShape
+    2 -> RoundedCornerShape(0.dp)
+    else -> RoundedCornerShape(24.dp)
+}
 
 /** Expanded media controls for the centered dynamic island. */
 @Composable
@@ -93,9 +105,40 @@ fun MediaControlPopup(
     useWaveform: Boolean = false,
     modifier: Modifier = Modifier,
 ) {
-    val accent = MaterialTheme.colorScheme.primary
+    val context = androidx.compose.ui.platform.LocalContext.current
+    val customColors = com.android.systemui.media.controls.ui.LunarisMusicSettings.shouldUseCustomMusicColors(context)
+    val palette = com.android.systemui.media.controls.ui.LunarisMusicSettings.getInt(context, "music_palette", 2)
+    val customBackground = Color(com.android.systemui.media.controls.ui.LunarisMusicSettings.getMusicBackgroundColor(context))
+    val customText = Color(com.android.systemui.media.controls.ui.LunarisMusicSettings.getMusicTextColor(context))
+    val accent = when {
+        customColors -> customText
+        palette == 2 -> Color.White
+        palette == 1 -> MaterialTheme.colorScheme.onSurface
+        palette == 0 -> MaterialTheme.colorScheme.onSurface
+        else -> MaterialTheme.colorScheme.primary
+    }
+    val foreground = if (customColors) customText else accent
+    val background = when {
+        customColors -> customBackground
+        palette == 2 -> Color.Black
+        palette == 1 -> MaterialTheme.colorScheme.surface
+        palette == 0 -> MaterialTheme.colorScheme.surface
+        else -> MaterialTheme.colorScheme.surface
+    }
+    val showSeekBar = com.android.systemui.media.controls.ui.LunarisMusicSettings.shouldShowSeekBar(context)
+    val playerIdentification = com.android.systemui.media.controls.ui.LunarisMusicSettings.getInt(context, "player_identification", 0)
+    val trailingContent = com.android.systemui.media.controls.ui.LunarisMusicSettings.getInt(context, "trailing_content", 0)
+    val buttonShape = com.android.systemui.media.controls.ui.LunarisMusicSettings.getInt(context, "playback_button_shape", 2)
+    // LUNARIS_MUSIC_UI_PATCH
+    val popupColorMode = when {
+        customColors -> 1
+        palette == 2 -> 1
+        else -> 0
+    }
+
     PopupSurface(
         shape = PopupShape,
+        colorMode = popupColorMode,
         modifier = modifier.widthIn(min = 320.dp, max = 400.dp),
     ) {
         Column(
@@ -119,7 +162,7 @@ fun MediaControlPopup(
                     modifier = Modifier.weight(1f),
                     verticalArrangement = Arrangement.spacedBy(4.dp),
                 ) {
-                    model.appName?.takeIf { it.isNotBlank() }?.let { appName ->
+                    if (playerIdentification == 1) model.appName?.takeIf { it.isNotBlank() }?.let { appName ->
                         Text(
                             text = appName.uppercase(),
                             style = MaterialTheme.typography.labelMedium,
@@ -133,7 +176,7 @@ fun MediaControlPopup(
                         text = model.songName?.toString().orEmpty(),
                         style = MaterialTheme.typography.titleLarge,
                         fontWeight = FontWeight.SemiBold,
-                        color = LocalContentColor.current,
+                        color = foreground,
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis,
                     )
@@ -141,7 +184,7 @@ fun MediaControlPopup(
                         Text(
                             text = artist.toString(),
                             style = MaterialTheme.typography.bodyLarge,
-                            color = LocalContentColor.current.copy(alpha = 0.8f),
+                            color = foreground.copy(alpha = 0.8f),
                             maxLines = 1,
                             overflow = TextOverflow.Ellipsis,
                         )
@@ -149,7 +192,7 @@ fun MediaControlPopup(
                 }
             }
 
-            if (model.durationMs > 0L) {
+            if (showSeekBar && model.durationMs > 0L) {
                 MediaProgressSection(
                     positionMs = model.positionMs,
                     durationMs = model.durationMs,
@@ -201,11 +244,44 @@ private fun MediaArtwork(model: MediaControlChipModel) {
                 resId = com.android.internal.R.drawable.ic_audio_media,
                 contentDescription = contentDescription,
             )
+
+    val context = androidx.compose.ui.platform.LocalContext.current
+    val shape =
+        com.android.systemui.media.controls.ui.LunarisMusicSettings
+            .getAlbumArtShape(context)
+    val rotate =
+        com.android.systemui.media.controls.ui.LunarisMusicSettings
+            .getBoolean(context, "rotate_album_art", true)
+    val thinBorder =
+        com.android.systemui.media.controls.ui.LunarisMusicSettings
+            .getBoolean(context, "thin_album_border", true)
+    val artworkShape = lunarisArtworkShape(shape)
+
+    val transition = rememberInfiniteTransition(label = "lunaris_album_rotation")
+    val rotation = transition.animateFloat(
+        initialValue = 0f,
+        targetValue = 360f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(durationMillis = 12000, easing = LinearEasing),
+            repeatMode = RepeatMode.Restart,
+        ),
+        label = "lunaris_album_rotation_angle",
+    )
+
     Box(
-        modifier =
-            Modifier.size(76.dp)
-                .clip(ArtworkShape)
-                .background(Color.White.copy(alpha = 0.08f)),
+        modifier = Modifier.size(76.dp)
+            .graphicsLayer {
+                rotationZ = if (rotate) rotation.value else 0f
+            }
+            .clip(artworkShape)
+            .background(Color.White.copy(alpha = 0.08f))
+            .then(
+                if (thinBorder) Modifier.border(
+                    width = 0.7.dp,
+                    color = Color.White.copy(alpha = 0.45f),
+                    shape = artworkShape,
+                ) else Modifier
+            ),
         contentAlignment = Alignment.Center,
     ) {
         UiIconView(
@@ -423,6 +499,21 @@ private fun MediaActionButton(
         return
     }
 
+    val context = androidx.compose.ui.platform.LocalContext.current
+    val buttonShapeSetting = com.android.systemui.media.controls.ui.LunarisMusicSettings
+        .getInt(context, "playback_button_shape", 2)
+    val buttonShape = when (buttonShapeSetting) {
+        0 -> RoundedCornerShape(0.dp)
+        1 -> RoundedCornerShape(12.dp)
+        3 -> RoundedCornerShape(8.dp)
+        4 -> RoundedCornerShape(16.dp)
+        5 -> RoundedCornerShape(0.dp)
+        6 -> RoundedCornerShape(8.dp)
+        7 -> RoundedCornerShape(4.dp)
+        8 -> RoundedCornerShape(4.dp)
+        9, 10, 11, 12 -> RoundedCornerShape(10.dp)
+        else -> CircleShape
+    }
     var toggleCount by remember { mutableIntStateOf(0) }
     val haptics = LocalHapticFeedback.current
     val contentDescription =
@@ -431,10 +522,12 @@ private fun MediaActionButton(
         modifier =
             Modifier.squishAnimation(toggleCount)
                 .size(buttonSize)
-                .clip(CircleShape)
+                .clip(buttonShape)
                 .background(containerColor)
                 .clickable(enabled = action.action != null) {
-                    haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                    if (com.android.systemui.media.controls.ui.LunarisMusicSettings.shouldUseMusicHaptics(context)) {
+                        haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                    }
                     action.action?.run()
                     toggleCount++
                 },

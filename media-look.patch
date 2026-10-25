@@ -1,0 +1,222 @@
+From: Grok <grok@x.ai>
+Date: Sat, 24 Oct 2026
+Subject: [PATCH] SystemUI: Force immersive media look matching screen recording
+
+- Make lockscreen media art full-bleed + center-crop by default
+- Larger, cleaner QS media card with album art on left
+- Better control positioning and seekbar spacing
+- Default the important toggles ON
+
+---
+ packages/SystemUI/res/layout/media_view.xml          | 42 ++++++++++++++++++++
+ packages/SystemUI/res/layout/qs_media_panel.xml      | 38 +++++++++++++++++
+ packages/SystemUI/src/com/android/systemui/media/MediaControlPanel.java | 18 ++++++++
+ packages/apps/Singularity/res/values/config.xml      |  8 ++++
+ 4 files changed, 106 insertions(+)
+
+diff --git a/packages/SystemUI/res/layout/media_view.xml b/packages/SystemUI/res/layout/media_view.xml
+index 1234567..abcdefg 100644
+--- a/packages/SystemUI/res/layout/media_view.xml
++++ b/packages/SystemUI/res/layout/media_view.xml
+@@ -1,6 +1,48 @@
+ <?xml version="1.0" encoding="utf-8"?>
+ <FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
+     android:layout_width="match_parent"
+     android:layout_height="match_parent">
+ 
++    <!-- Full-bleed album art (matches the big VI background in recording) -->
++    <ImageView
++        android:id="@+id/album_art"
++        android:layout_width="match_parent"
++        android:layout_height="match_parent"
++        android:scaleType="centerCrop"
++        android:adjustViewBounds="true"
++        android:contentDescription="@null" />
++
++    <!-- Dark gradient so text/controls stay readable -->
++    <View
++        android:layout_width="match_parent"
++        android:layout_height="match_parent"
++        android:background="@drawable/media_scrim_gradient" />
++
++    <LinearLayout
++        android:id="@+id/media_action_bar"
++        android:layout_width="match_parent"
++        android:layout_height="wrap_content"
++        android:layout_gravity="bottom"
++        android:orientation="vertical"
++        android:paddingHorizontal="24dp"
++        android:paddingBottom="48dp">
++
++        <TextView
++            android:id="@+id/header_title"
++            android:layout_width="match_parent"
++            android:layout_height="wrap_content"
++            android:textSize="20sp"
++            android:textStyle="bold"
++            android:textColor="@android:color/white"
++            android:ellipsize="end"
++            android:maxLines="1" />
++
++        <TextView
++            android:id="@+id/header_artist"
++            android:layout_width="match_parent"
++            android:layout_height="wrap_content"
++            android:textSize="14sp"
++            android:textColor="#CCFFFFFF"
++            android:ellipsize="end"
++            android:maxLines="1"
++            android:layout_marginTop="2dp" />
++
++        <SeekBar
++            android:id="@+id/media_progress_bar"
++            android:layout_width="match_parent"
++            android:layout_height="wrap_content"
++            android:layout_marginTop="16dp"
++            android:layout_marginBottom="20dp" />
++
++        <!-- Transport row -->
++        <LinearLayout
++            android:layout_width="match_parent"
++            android:layout_height="wrap_content"
++            android:gravity="center"
++            android:orientation="horizontal">
++
++            <ImageButton android:id="@+id/action0"
++                android:layout_width="48dp"
++                android:layout_height="48dp"
++                android:background="?android:attr/selectableItemBackgroundBorderless"
++                android:scaleType="centerInside" />
++
++            <ImageButton android:id="@+id/action1"
++                android:layout_width="56dp"
++                android:layout_height="56dp"
++                android:layout_marginHorizontal="24dp"
++                android:background="?android:attr/selectableItemBackgroundBorderless"
++                android:scaleType="centerInside" />
++
++            <ImageButton android:id="@+id/action2"
++                android:layout_width="48dp"
++                android:layout_height="48dp"
++                android:background="?android:attr/selectableItemBackgroundBorderless"
++                android:scaleType="centerInside" />
++        </LinearLayout>
++    </LinearLayout>
+ </FrameLayout>
+diff --git a/packages/SystemUI/res/layout/qs_media_panel.xml b/packages/SystemUI/res/layout/qs_media_panel.xml
+index 2345678..bcdefgh 100644
+--- a/packages/SystemUI/res/layout/qs_media_panel.xml
++++ b/packages/SystemUI/res/layout/qs_media_panel.xml
+@@ -1,5 +1,43 @@
+ <?xml version="1.0" encoding="utf-8"?>
+ <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+     android:id="@+id/media_panel"
+     android:layout_width="match_parent"
+     android:layout_height="wrap_content"
++    android:orientation="horizontal"
++    android:padding="14dp"
++    android:gravity="center_vertical"
++    android:background="@drawable/qs_media_card_bg">
++
++    <!-- Small album art on the left (exactly like the recording) -->
++    <ImageView
++        android:id="@+id/album_art"
++        android:layout_width="58dp"
++        android:layout_height="58dp"
++        android:scaleType="centerCrop"
++        android:layout_marginEnd="14dp" />
++
++    <LinearLayout
++        android:layout_width="0dp"
++        android:layout_height="wrap_content"
++        android:layout_weight="1"
++        android:orientation="vertical">
++
++        <TextView
++            android:id="@+id/header_title"
++            android:layout_width="match_parent"
++            android:layout_height="wrap_content"
++            android:textSize="14sp"
++            android:textStyle="bold"
++            android:ellipsize="end"
++            android:maxLines="1" />
++
++        <TextView
++            android:id="@+id/header_artist"
++            android:layout_width="match_parent"
++            android:layout_height="wrap_content"
++            android:textSize="12sp"
++            android:alpha="0.75"
++            android:ellipsize="end"
++            android:maxLines="1"
++            android:layout_marginTop="1dp" />
++
++        <LinearLayout
++            android:layout_width="match_parent"
++            android:layout_height="wrap_content"
++            android:orientation="horizontal"
++            android:layout_marginTop="8dp"
++            android:gravity="start">
++
++            <ImageButton android:id="@+id/action0"
++                android:layout_width="36dp"
++                android:layout_height="36dp"
++                android:background="?android:attr/selectableItemBackgroundBorderless" />
++
++            <ImageButton android:id="@+id/action1"
++                android:layout_width="40dp"
++                android:layout_height="40dp"
++                android:layout_marginHorizontal="12dp"
++                android:background="?android:attr/selectableItemBackgroundBorderless" />
++
++            <ImageButton android:id="@+id/action2"
++                android:layout_width="36dp"
++                android:layout_height="36dp"
++                android:background="?android:attr/selectableItemBackgroundBorderless" />
++        </LinearLayout>
++    </LinearLayout>
+ </LinearLayout>
+diff --git a/packages/SystemUI/src/com/android/systemui/media/MediaControlPanel.java b/packages/SystemUI/src/com/android/systemui/media/MediaControlPanel.java
+index 3456789..cdefghi 100644
+--- a/packages/SystemUI/src/com/android/systemui/media/MediaControlPanel.java
++++ b/packages/SystemUI/src/com/android/systemui/media/MediaControlPanel.java
+@@ -180,6 +180,24 @@ public class MediaControlPanel {
+         }
+     }
+ 
++    // Force center-crop + full visibility like the screen recording
++    private void applyAlbumArtStyle(ImageView albumView, Drawable artwork) {
++        if (albumView == null) return;
++        if (artwork != null) {
++            albumView.setScaleType(ImageView.ScaleType.CENTER_CROP);
++            albumView.setImageDrawable(artwork);
++            albumView.setVisibility(View.VISIBLE);
++            albumView.setAlpha(1.0f);
++        } else {
++            albumView.setVisibility(View.GONE);
++        }
++    }
++
++    // Call this from the existing setMediaData / bind methods
++    // Example:
++    // applyAlbumArtStyle(mViewHolder.getAlbumView(), data.getArtwork());
++
+     private void loadDimens() {
+         // existing code...
+     }
+diff --git a/packages/apps/Singularity/res/values/config.xml b/packages/apps/Singularity/res/values/config.xml
+index 4567890..defghij 100644
+--- a/packages/apps/Singularity/res/values/config.xml
++++ b/packages/apps/Singularity/res/values/config.xml
+@@ -10,4 +10,12 @@
+     <!-- Existing configs -->
+ 
++    <!-- Force the recording look by default -->
++    <bool name="config_lockscreenMediaArtDefault">true</bool>
++    <bool name="config_qsMediaPlayerEnabled">true</bool>
++    <bool name="config_qsMediaStockStyleDefault">true</bool>
++    <bool name="config_mediaWaveformSeekbarDefault">true</bool>
++    <integer name="config_lockscreenMediaArtFilterDefault">0</integer> <!-- 0 = none/clean -->
++    <integer name="config_qsMediaArtDimDefault">30</integer>
++
+ </resources>

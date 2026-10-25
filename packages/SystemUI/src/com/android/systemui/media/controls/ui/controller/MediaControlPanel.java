@@ -1167,11 +1167,16 @@ public class MediaControlPanel {
     private void updateSeekBarVisibility() {
         ConstraintSet expandedSet = mMediaViewController.getExpandedLayout();
         expandedSet.setVisibility(R.id.media_progress_bar, getSeekBarVisibility());
-        expandedSet.setAlpha(R.id.media_progress_bar, mIsSeekBarEnabled ? 1.0f : 0.0f);
+        expandedSet.setAlpha(
+                R.id.media_progress_bar,
+                getSeekBarVisibility() == ConstraintSet.VISIBLE ? 1.0f : 0.0f);
     }
 
+    // LUNARIS_BAR_INTEGRATION: honor the LunarisBar seek-bar preference.
     private int getSeekBarVisibility() {
-        if (mIsSeekBarEnabled) {
+        if (mIsSeekBarEnabled
+                && com.android.systemui.media.controls.ui.LunarisMusicSettings
+                        .shouldShowSeekBar(mContext)) {
             return ConstraintSet.VISIBLE;
         }
         // Set progress bar to INVISIBLE to keep the positions of text and buttons similar to the

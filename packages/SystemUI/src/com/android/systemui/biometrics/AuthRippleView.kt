@@ -54,6 +54,7 @@ class AuthRippleView(context: Context?, attrs: AttributeSet?) : View(context, at
     private var drawDwell: Boolean = false
     private var drawRipple: Boolean = false
     private var drawWater: Boolean = false
+    private var drawStyle: Boolean = false
 
     private var lockScreenColorVal = Color.WHITE
     private val fadeDuration = 83L
@@ -64,6 +65,8 @@ class AuthRippleView(context: Context?, attrs: AttributeSet?) : View(context, at
     private val ripplePaint = Paint()
     private val waterShader = WaterRippleShader()
     private val waterPaint = Paint()
+    private val styleShader = FodStyleRippleShader()
+    private val stylePaint = Paint()
     private var unlockedRippleAnimator: Animator? = null
     private var fadeDwellAnimator: Animator? = null
     private var retractDwellAnimator: Animator? = null
@@ -97,6 +100,7 @@ class AuthRippleView(context: Context?, attrs: AttributeSet?) : View(context, at
         ripplePaint.shader = rippleShader
         waterPaint.shader = waterShader
         waterPaint.isAntiAlias = false
+        stylePaint.shader = styleShader
         setLockScreenColor(Utils.getColorAttr(context,
                 android.R.attr.colorAccent).defaultColor) // default color
 
@@ -272,6 +276,11 @@ class AuthRippleView(context: Context?, attrs: AttributeSet?) : View(context, at
     fun startUnlockedRipple(onAnimationEnd: Runnable?) {
         unlockedRippleAnimator?.cancel()
 
+        val fodStyle = getFodAnimStyle()
+        if (fodStyle >= FOD_ANIM_FIRST_CUSTOM && fodStyle <= FOD_ANIM_LAST_CUSTOM) {
+            startStyleRipple(fodStyle, onAnimationEnd)
+            return
+        }
         if (isWaterRippleEnabled()) {
             startWaterRipple(onAnimationEnd)
             return
@@ -304,6 +313,63 @@ class AuthRippleView(context: Context?, attrs: AttributeSet?) : View(context, at
             })
         }
         unlockedRippleAnimator?.start()
+    }
+
+    private fun getFodAnimStyle(): Int =
+        Settings.System.getIntForUser(
+            context.contentResolver, SETTING_FOD_UNLOCK_ANIM, 0, UserHandle.USER_CURRENT
+        )
+
+    /** Lunaris extra styles (2..6), drawn by [FodStyleRippleShader]. */
+    private fun startStyleRipple(style: Int, onAnimationEnd: Runnable?) {
+        val highFrameRate = readBool(SETTING_FOD_WATER_HFR, true)
+        val w = width.toFloat().coerceAtLeast(1f)
+        val h = height.toFloat().coerceAtLeast(1f)
+        val farthest = maxOf(
+            Math.hypot(origin.x.toDouble(), origin.y.toDouble()),
+            Math.hypot((w - origin.x).toDouble(), origin.y.toDouble()),
+            Math.hypot(origin.x.toDouble(), (h - origin.y).toDouble()),
+            Math.hypot((w - origin.x).toDouble(), (h - origin.y).toDouble())
+        ).toFloat()
+        val c = lockScreenColorVal
+
+        styleShader.setOrigin(origin.x.toFloat(), origin.y.toFloat())
+        styleShader.setSize(w, h)
+        styleShader.maxRadius = farthest
+        styleShader.density = resources.displayMetrics.density
+        styleShader.style = style.toFloat()
+        styleShader.setTint(Color.red(c) / 255f, Color.green(c) / 255f, Color.blue(c) / 255f)
+        styleShader.progress = 0f
+        styleShader.fade = 0f
+
+        val animator = ValueAnimator.ofFloat(0f, 1f).apply {
+            duration = FOD_STYLE_DURATION_MS
+            interpolator = Interpolators.LINEAR
+            addUpdateListener { a ->
+                styleShader.progress = a.animatedValue as Float
+                styleShader.fade = smooth(a.currentPlayTime.toFloat() / 100f)
+                invalidate()
+            }
+            addListener(object : AnimatorListenerAdapter() {
+                override fun onAnimationStart(animation: Animator) {
+                    drawStyle = true
+                    visibility = VISIBLE
+                    if (highFrameRate) {
+                        setRequestedFrameRate(REQUESTED_FRAME_RATE_CATEGORY_HIGH)
+                    }
+                }
+
+                override fun onAnimationEnd(animation: Animator) {
+                    drawStyle = false
+                    setRequestedFrameRate(REQUESTED_FRAME_RATE_CATEGORY_DEFAULT)
+                    visibility = GONE
+                    unlockedRippleAnimator = null
+                    onAnimationEnd?.run()
+                }
+            })
+        }
+        unlockedRippleAnimator = animator
+        animator.start()
     }
 
     private fun isWaterRippleEnabled(): Boolean =
@@ -445,6 +511,10 @@ class AuthRippleView(context: Context?, attrs: AttributeSet?) : View(context, at
             canvas.drawRect(0f, 0f, width.toFloat(), height.toFloat(), waterPaint)
         }
 
+        if (drawStyle) {
+            canvas.drawRect(0f, 0f, width.toFloat(), height.toFloat(), stylePaint)
+        }
+
         if (drawRipple) {
             canvas?.drawCircle(origin.x.toFloat(), origin.y.toFloat(),
                     rippleShader.rippleSize.currentWidth, ripplePaint)
@@ -468,3 +538,7 @@ private const val WATER_DECAY_FULLSCREEN = 0.6f
 private const val WATER_REACH_FRACTION = 0.72f
 // Fullscreen mode: front speed in screen diagonals per second.
 private const val WATER_FULLSCREEN_SPEED_DIAGS_PER_S = 0.42f
+
+private const val FOD_ANIM_FIRST_CUSTOM = 2 // Pulse, Neon ring, Aurora, Sparkle, Shockwave
+private const val FOD_ANIM_LAST_CUSTOM = 31
+private const val FOD_STYLE_DURATION_MS = 1600L
