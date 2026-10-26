@@ -170,6 +170,14 @@ public class ThemeOverlayController implements CoreStartable, Dumpable {
     private double mHueShift = 0.0;
     private double mToneShiftLight = 0.0;
     private double mToneShiftDark = 0.0;
+    // Lunaris Monet: custom primary seed, separate light/dark saturation,
+    // and accent/background saturation fallbacks.
+    private Integer mSeedOverride = null;
+    private boolean mSeparateLightDark = false;
+    private double mChromaBoostLight = 0.0;
+    private double mChromaBoostDark = 0.0;
+    private double mAccentSaturation = 0.0;
+    private double mBackgroundSaturation = 0.0;
     // Theme variant: Vibrant, Tonal, Expressive, etc
     @VisibleForTesting
     @ThemeStyle.Type
@@ -701,6 +709,25 @@ public class ThemeOverlayController implements CoreStartable, Dumpable {
         updateThemeOverlays();
     }
 
+    /** Lunaris Monet keys: shared by every path that reads the theme blob. */
+    private void parseMonetSettings(JSONObject object) {
+        mSeparateLightDark = object.optBoolean("_separate_light_dark", false);
+        mChromaBoostLight = object.optDouble("_chroma_boost_light", 0.0);
+        mChromaBoostDark = object.optDouble("_chroma_boost_dark", 0.0);
+        mAccentSaturation = object.optDouble("_accent_saturation", 0.0);
+        mBackgroundSaturation = object.optDouble("_background_saturation", 0.0);
+        String seedHex = object.optString("_seed_color", "");
+        mSeedOverride = null;
+        if (!seedHex.isEmpty()) {
+            try {
+                mSeedOverride = Color.parseColor(
+                        seedHex.startsWith("#") ? seedHex : "#" + seedHex);
+            } catch (IllegalArgumentException e) {
+                Log.w(TAG, "Invalid _seed_color: " + seedHex);
+            }
+        }
+    }
+
     private void fetchCustomThemeSettings() {
         final String overlayPackageJson = mSecureSettings.getStringForUser(
                 Settings.Secure.THEME_CUSTOMIZATION_OVERLAY_PACKAGES,
@@ -708,7 +735,12 @@ public class ThemeOverlayController implements CoreStartable, Dumpable {
         if (!TextUtils.isEmpty(overlayPackageJson)) {
             try {
                 JSONObject object = new JSONObject(overlayPackageJson);
-                mContrast = object.optDouble("_contrast_level", 0.0);
+                if (object.has("_contrast_level")) {
+                    mContrast = object.optDouble("_contrast_level", 0.0);
+                } else {
+                    // "Use system contrast": follow the accessibility contrast setting.
+                    mContrast = mUiModeManager.getContrast();
+                }
                 mChromaBoost = object.optDouble("_chroma_boost", 0.0);
                 mIsFidelityEnabled = object.optBoolean("_fidelity_enabled", false);
                 mChromaAccent1 = object.optDouble("_chroma_accent1", 0.0);
@@ -732,6 +764,7 @@ public class ThemeOverlayController implements CoreStartable, Dumpable {
                 mHueShift = object.optDouble("_hue_shift", 0.0);
                 mToneShiftLight = object.optDouble("_tone_shift_light", 0.0);
                 mToneShiftDark = object.optDouble("_tone_shift_dark", 0.0);
+                parseMonetSettings(object);
                 if (DEBUG) {
                     Log.d(TAG, "Custom theme settings: contrast=" + mContrast
                             + " chromaBoost=" + mChromaBoost
@@ -785,7 +818,7 @@ public class ThemeOverlayController implements CoreStartable, Dumpable {
         if (mIsFidelityEnabled) {
             style = ThemeStyle.CONTENT;
         }
-        int primarySeed = color;
+        int primarySeed = mSeedOverride != null ? mSeedOverride : color;
         if (mHueShift != 0.0) {
             primarySeed = applyHueShift(color, mHueShift);
         }
@@ -825,30 +858,48 @@ public class ThemeOverlayController implements CoreStartable, Dumpable {
         return ColorUtils.setAlphaComponent(shifted, Color.alpha(argb));
     }
 
+    /** Global boost for the current mode, honouring "separate light and dark". */
+    private double baseChromaBoost() {
+        if (!mSeparateLightDark) {
+            return mChromaBoost;
+        }
+        return isNightMode() ? mChromaBoostDark : mChromaBoostLight;
+    }
+
+    /** Accent saturation if set, otherwise the base boost. */
+    private double accentFallback() {
+        return mAccentSaturation != 0.0 ? mAccentSaturation : baseChromaBoost();
+    }
+
+    /** Background saturation if set, otherwise the base boost. */
+    private double backgroundFallback() {
+        return mBackgroundSaturation != 0.0 ? mBackgroundSaturation : baseChromaBoost();
+    }
+
     private double resolveChromaBoost(String tokenName) {
         if (tokenName.startsWith("accent1")) {
-            return mChromaAccent1 != 0.0 ? mChromaAccent1 : mChromaBoost;
+            return mChromaAccent1 != 0.0 ? mChromaAccent1 : accentFallback();
         } else if (tokenName.startsWith("accent2")) {
-            return mChromaAccent2 != 0.0 ? mChromaAccent2 : mChromaBoost;
+            return mChromaAccent2 != 0.0 ? mChromaAccent2 : accentFallback();
         } else if (tokenName.startsWith("accent3")) {
-            return mChromaAccent3 != 0.0 ? mChromaAccent3 : mChromaBoost;
+            return mChromaAccent3 != 0.0 ? mChromaAccent3 : accentFallback();
         } else if (tokenName.startsWith("neutral1")) {
-            return mChromaNeutral1 != 0.0 ? mChromaNeutral1 : mChromaBoost;
+            return mChromaNeutral1 != 0.0 ? mChromaNeutral1 : backgroundFallback();
         } else if (tokenName.startsWith("neutral2")) {
-            return mChromaNeutral2 != 0.0 ? mChromaNeutral2 : mChromaBoost;
+            return mChromaNeutral2 != 0.0 ? mChromaNeutral2 : backgroundFallback();
         }
         if (tokenName.startsWith("primary")
                 || tokenName.startsWith("on_primary")
                 || tokenName.startsWith("inverse_primary")) {
-            return mChromaAccent1 != 0.0 ? mChromaAccent1 : mChromaBoost;
+            return mChromaAccent1 != 0.0 ? mChromaAccent1 : accentFallback();
         }
         if (tokenName.startsWith("secondary")
                 || tokenName.startsWith("on_secondary")) {
-            return mChromaAccent2 != 0.0 ? mChromaAccent2 : mChromaBoost;
+            return mChromaAccent2 != 0.0 ? mChromaAccent2 : accentFallback();
         }
         if (tokenName.startsWith("tertiary")
                 || tokenName.startsWith("on_tertiary")) {
-            return mChromaAccent3 != 0.0 ? mChromaAccent3 : mChromaBoost;
+            return mChromaAccent3 != 0.0 ? mChromaAccent3 : accentFallback();
         }
         if (tokenName.startsWith("background")
                 || tokenName.startsWith("on_background")
@@ -861,13 +912,13 @@ public class ThemeOverlayController implements CoreStartable, Dumpable {
                 || tokenName.startsWith("on_inverse_surface")
                 || tokenName.startsWith("outline")
                 || tokenName.startsWith("scrim")) {
-            return mChromaNeutral1 != 0.0 ? mChromaNeutral1 : mChromaBoost;
+            return mChromaNeutral1 != 0.0 ? mChromaNeutral1 : backgroundFallback();
         }
         if (tokenName.startsWith("surface_variant")
                 || tokenName.startsWith("on_surface_variant")) {
-            return mChromaNeutral2 != 0.0 ? mChromaNeutral2 : mChromaBoost;
+            return mChromaNeutral2 != 0.0 ? mChromaNeutral2 : backgroundFallback();
         }
-        return mChromaBoost;
+        return baseChromaBoost();
     }
 
     private double resolveToneShift(boolean isDark) {
@@ -947,7 +998,7 @@ public class ThemeOverlayController implements CoreStartable, Dumpable {
     }
 
     private int boostChroma(int argb) {
-        return boostChromaWith(argb, mChromaBoost);
+        return boostChromaWith(argb, baseChromaBoost());
     }
 
     private static int boostChromaWith(int argb, double chromaBoost) {
@@ -1020,8 +1071,14 @@ public class ThemeOverlayController implements CoreStartable, Dumpable {
             try {
                 JSONObject object = new JSONObject(overlayPackageJson);
                 
-                mContrast = object.optDouble("_contrast_level", 0.0);
+                if (object.has("_contrast_level")) {
+                    mContrast = object.optDouble("_contrast_level", 0.0);
+                } else {
+                    // "Use system contrast": follow the accessibility contrast setting.
+                    mContrast = mUiModeManager.getContrast();
+                }
                 mChromaBoost = object.optDouble("_chroma_boost", 0.0);
+                parseMonetSettings(object);
 
                 for (String category : ThemeOverlayApplier.THEME_CATEGORIES) {
                     if (object.has(category)) {
