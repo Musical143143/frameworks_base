@@ -87,13 +87,39 @@ object DynamicIslandFeatureSettings {
         ) != 0
     }
 
+    /**
+     * LunarisBar chip scale. When it has been written, the island's width and height follow it;
+     * when it is unset (-1), the island keeps its own Width/Height Scale values.
+     */
+    const val LUNARIS_CHIP_SCALE = "lunaris_bar_chip_scale"
+    private const val LUNARIS_UNSET = -1
+
+    private fun isIslandSizeKey(key: String): Boolean =
+        key == WIDTH_SCALE || key == HEIGHT_SCALE
+
     fun ContentResolver.readDynamicIslandScale(key: String): Float {
-        val percent = Settings.System.getIntForUser(
-            this,
-            key,
-            SCALE_PERCENT_DEFAULT,
-            UserHandle.USER_CURRENT,
-        )
+        val lunarisPercent =
+            if (isIslandSizeKey(key)) {
+                Settings.System.getIntForUser(
+                    this,
+                    LUNARIS_CHIP_SCALE,
+                    LUNARIS_UNSET,
+                    UserHandle.USER_CURRENT,
+                )
+            } else {
+                LUNARIS_UNSET
+            }
+        val percent =
+            if (lunarisPercent != LUNARIS_UNSET) {
+                lunarisPercent
+            } else {
+                Settings.System.getIntForUser(
+                    this,
+                    key,
+                    SCALE_PERCENT_DEFAULT,
+                    UserHandle.USER_CURRENT,
+                )
+            }
         return (percent / 100f).coerceIn(SCALE_MIN, SCALE_MAX)
     }
 
@@ -143,7 +169,15 @@ object DynamicIslandFeatureSettings {
                 observer,
                 UserHandle.USER_ALL,
             )
+            if (isIslandSizeKey(key)) {
+                context.contentResolver.registerContentObserver(
+                    Settings.System.getUriFor(LUNARIS_CHIP_SCALE),
+                    false,
+                    observer,
+                    UserHandle.USER_ALL,
+                )
+            }
             trySend(context.contentResolver.readDynamicIslandScale(key))
             awaitClose { context.contentResolver.unregisterContentObserver(observer) }
-        }   
+        }
 }
