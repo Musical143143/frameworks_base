@@ -2,6 +2,7 @@ package com.android.systemui.axdynamicbar.ui
 
 import com.android.systemui.animation.Expandable
 import com.android.systemui.axdynamicbar.domain.AxDynamicBarInteractor
+import com.android.systemui.axdynamicbar.domain.LunarisBarConfig
 import com.android.systemui.axdynamicbar.model.IslandEvent
 import com.android.systemui.statusbar.chips.ui.model.OngoingActivityChipModel
 import com.android.systemui.biometrics.AuthController
@@ -99,6 +100,7 @@ constructor(
             .stateIn(applicationScope, SharingStarted.Eagerly, true)
     val mediaUseWaveform: StateFlow<Boolean> = interactor.mediaUseWaveform
     val chipStyle: StateFlow<Int> = interactor.settings.chipStyle
+    val lunarisBar: StateFlow<LunarisBarConfig> = interactor.settings.lunarisBar
 
     val keyguardBatteryInfo: StateFlow<KeyguardBatteryInfo> =
         combine(

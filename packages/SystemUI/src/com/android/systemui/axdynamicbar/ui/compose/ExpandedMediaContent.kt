@@ -6,8 +6,11 @@ import android.graphics.drawable.LayerDrawable
 import android.util.TypedValue
 import android.widget.SeekBar
 import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.AnimationVector1D
 import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.keyframes
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -58,12 +61,16 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ColorFilter
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.toArgb
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
+import com.android.systemui.axdynamicbar.domain.LocalLunarisBarConfig
 import com.android.systemui.axdynamicbar.shared.IslandActions
 import com.android.systemui.axdynamicbar.model.IslandEvent
 import com.android.systemui.axdynamicbar.shared.*
@@ -88,8 +95,13 @@ private val ArtistNameColor = Color.White.copy(alpha = 0.8f)
 
 @Composable
 internal fun MediaCard(event: IslandEvent.Media, interactor: IslandActions) {
-    val colors = rememberMediaColors(event)
+    val lunaris = LocalLunarisBarConfig.current
+    val colors = rememberMediaColors(if (lunaris.useAlbumColors) event else event.copy(mediaColor = 0))
     val accent = colors.accent
+    val cardColor = lunaris.musicCardBackground(CardBgBase)
+    val artShape = lunaris.albumArtCornerShape()
+    val cardShape = lunaris.cardCornerShape()
+    val spin = rememberAlbumSpin(lunaris.rotateAlbumArt && event.isPlaying)
     val useWaveform = if (interactor is com.android.systemui.axdynamicbar.domain.AxDynamicBarInteractor) {
         interactor.mediaUseWaveform.collectAsStateWithLifecycle().value
     } else {
@@ -97,45 +109,55 @@ internal fun MediaCard(event: IslandEvent.Media, interactor: IslandActions) {
     }
 
     Surface(
-        modifier = Modifier.fillMaxWidth().border(1.dp, CardBorderBrush, ShapeCard),
-        shape = ShapeCard,
-        color = CardBg,
+        modifier = Modifier.fillMaxWidth().border(1.dp, CardBorderBrush, cardShape),
+        shape = cardShape,
+        color = cardColor,
     ) {
         Box(modifier = Modifier.fillMaxWidth()) {
 
-            event.albumArt?.let { art ->
-                Image(
-                    bitmap = art.toScaledBitmap(350.dp),
-                    contentDescription = null,
+            when (lunaris.musicBackground) {
+                0 -> Unit
+                2 -> Box(
                     modifier = Modifier
                         .matchParentSize()
-                        .blur(40.dp),
-                    contentScale = ContentScale.Crop,
+                        .background(Brush.verticalGradient(colors = listOf(cardColor, Color.Black))),
                 )
-            } ?: Box(
-                modifier = Modifier
-                    .matchParentSize()
-                    .background(CardBg),
-            )
-
-            Box(
-                modifier = Modifier
-                    .matchParentSize()
-                    .background(
-                        Brush.verticalGradient(
-                            colorStops = arrayOf(
-                                0.00f to Color.Black.copy(alpha = 0.40f),
-                                0.15f to Color.Black.copy(alpha = 0.44f),
-                                0.30f to Color.Black.copy(alpha = 0.50f),
-                                0.45f to Color.Black.copy(alpha = 0.58f),
-                                0.60f to Color.Black.copy(alpha = 0.68f),
-                                0.75f to Color.Black.copy(alpha = 0.80f),
-                                0.90f to Color.Black.copy(alpha = 0.92f),
-                                1.00f to Color.Black.copy(alpha = 1.00f),
-                            )
+                else -> {
+                    event.albumArt?.let { art ->
+                        Image(
+                            bitmap = art.toScaledBitmap(350.dp),
+                            contentDescription = null,
+                            modifier = Modifier
+                                .matchParentSize()
+                                .blur(40.dp),
+                            contentScale = ContentScale.Crop,
                         )
+                    } ?: Box(
+                        modifier = Modifier
+                            .matchParentSize()
+                            .background(cardColor),
                     )
-            )
+
+                    Box(
+                        modifier = Modifier
+                            .matchParentSize()
+                            .background(
+                                Brush.verticalGradient(
+                                    colorStops = arrayOf(
+                                        0.00f to Color.Black.copy(alpha = 0.40f),
+                                        0.15f to Color.Black.copy(alpha = 0.44f),
+                                        0.30f to Color.Black.copy(alpha = 0.50f),
+                                        0.45f to Color.Black.copy(alpha = 0.58f),
+                                        0.60f to Color.Black.copy(alpha = 0.68f),
+                                        0.75f to Color.Black.copy(alpha = 0.80f),
+                                        0.90f to Color.Black.copy(alpha = 0.92f),
+                                        1.00f to Color.Black.copy(alpha = 1.00f),
+                                    )
+                                )
+                            )
+                    )
+                }
+            }
 
             Column(modifier = Modifier.fillMaxWidth()) {
                 Row(
@@ -153,13 +175,17 @@ internal fun MediaCard(event: IslandEvent.Media, interactor: IslandActions) {
                         Image(
                             bitmap = art.toScaledBitmap(AlbumArtSize),
                             contentDescription = null,
-                            modifier = Modifier.size(AlbumArtSize).clip(ShapeLg),
+                            modifier = Modifier
+                                .size(AlbumArtSize)
+                                .clip(artShape)
+                                .then(if (lunaris.rotateAlbumArt) Modifier.graphicsLayer { rotationZ = spin.value } else Modifier)
+                                .then(if (lunaris.thinAlbumBorder) Modifier.border(1.dp, Color.White.copy(alpha = 0.2f), artShape) else Modifier),
                             contentScale = ContentScale.Crop,
                         )
                     } ?: Box(
                         modifier = Modifier
                             .size(AlbumArtSize)
-                            .clip(ShapeLg)
+                            .clip(artShape)
                             .background(accent.copy(alpha = AlphaFaint)),
                         contentAlignment = Alignment.Center,
                     ) {
@@ -172,7 +198,7 @@ internal fun MediaCard(event: IslandEvent.Media, interactor: IslandActions) {
                     ) {
                         Text(
                             event.track.ifEmpty { stringResource(R.string.ax_dynamic_bar_now_playing) },
-                            color = AlbumNameColor,
+                            color = lunaris.musicCardContent(AlbumNameColor),
                             style = MaterialTheme.typography.titleMedium,
                             maxLines = 2,
                             overflow = TextOverflow.Ellipsis,
@@ -187,13 +213,23 @@ internal fun MediaCard(event: IslandEvent.Media, interactor: IslandActions) {
                             )
                         }
                     }
-                    event.appIcon?.let { icon ->
-                        Image(
-                            bitmap = icon.toScaledBitmap(SizeIconSm),
-                            contentDescription = null,
-                            modifier = Modifier.size(SizeIconSm).clip(ShapeXs),
-                            colorFilter = ColorFilter.tint(OnCardText),
+                    when (lunaris.playerIdentification) {
+                        0 -> event.appIcon?.let { icon ->
+                            Image(
+                                bitmap = icon.toScaledBitmap(SizeIconSm),
+                                contentDescription = null,
+                                modifier = Modifier.size(SizeIconSm).clip(ShapeXs),
+                                colorFilter = ColorFilter.tint(OnCardTextBase),
+                            )
+                        }
+                        1 -> Text(
+                            rememberPlayerLabel(event.packageName),
+                            color = ArtistNameColor,
+                            style = MaterialTheme.typography.labelSmall,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
                         )
+                        else -> Unit
                     }
                 }
 
@@ -203,7 +239,7 @@ internal fun MediaCard(event: IslandEvent.Media, interactor: IslandActions) {
                         .padding(horizontal = SpaceXxl, vertical = SpaceLg),
                     verticalArrangement = Arrangement.spacedBy(SpaceLg),
                 ) {
-                    if (event.duration > 0L) {
+                    if (event.duration > 0L && lunaris.showSeekBar) {
                         MediaSeekBar(event, interactor, accent, useWaveform)
                     }
                     MediaControls(event, interactor, accent)
@@ -224,8 +260,11 @@ internal fun MediaExpanded(
     } else {
         false
     }
-    val colors = rememberMediaColors(event)
+    val lunaris = LocalLunarisBarConfig.current
+    val colors = rememberMediaColors(if (lunaris.useAlbumColors) event else event.copy(mediaColor = 0))
     val accent = colors.accent
+    val artShape = lunaris.albumArtCornerShape()
+    val spin = rememberAlbumSpin(lunaris.rotateAlbumArt && event.isPlaying)
 
     Column(modifier = modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(SpaceXxl)) {
         Row(
@@ -240,12 +279,16 @@ internal fun MediaExpanded(
                 Image(
                     bitmap = art.toScaledBitmap(SizeAlbumSm),
                     contentDescription = null,
-                    modifier = Modifier.size(SizeAlbumSm).clip(ShapeLg),
+                    modifier = Modifier
+                        .size(SizeAlbumSm)
+                        .clip(artShape)
+                        .then(if (lunaris.rotateAlbumArt) Modifier.graphicsLayer { rotationZ = spin.value } else Modifier)
+                        .then(if (lunaris.thinAlbumBorder) Modifier.border(1.dp, Color.White.copy(alpha = 0.2f), artShape) else Modifier),
                     contentScale = ContentScale.Crop,
                 )
             } ?: Surface(
                 modifier = Modifier.size(SizeAlbumSm),
-                shape = ShapeLg,
+                shape = artShape,
                 color = accent.copy(alpha = AlphaSubtle),
             ) {
                 Box(contentAlignment = Alignment.Center, modifier = Modifier.fillMaxSize()) {
@@ -263,7 +306,7 @@ internal fun MediaExpanded(
             ) {
                 Text(
                     event.track.ifEmpty { stringResource(R.string.ax_dynamic_bar_now_playing) },
-                    color = AlbumNameColor,
+                    color = lunaris.musicCardContent(AlbumNameColor),
                     style = MaterialTheme.typography.titleSmall,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
@@ -271,7 +314,7 @@ internal fun MediaExpanded(
                 if (event.artist.isNotEmpty()) {
                     Text(
                         event.artist,
-                        color = ArtistNameColor,
+                        color = lunaris.musicCardContent(ArtistNameColor),
                         style = MaterialTheme.typography.bodySmall,
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis,
@@ -279,18 +322,28 @@ internal fun MediaExpanded(
                 }
             }
 
-            event.appIcon?.let { icon ->
-                Image(
-                    bitmap = icon.toScaledBitmap(SizeIconSm),
-                    contentDescription = null,
-                    modifier = Modifier.size(SizeIconSm).clip(ShapeXs),
-                    colorFilter = ColorFilter.tint(OnCardText),
+            when (lunaris.playerIdentification) {
+                0 -> event.appIcon?.let { icon ->
+                    Image(
+                        bitmap = icon.toScaledBitmap(SizeIconSm),
+                        contentDescription = null,
+                        modifier = Modifier.size(SizeIconSm).clip(ShapeXs),
+                        colorFilter = ColorFilter.tint(OnCardTextBase),
+                    )
+                }
+                1 -> Text(
+                    rememberPlayerLabel(event.packageName),
+                    color = ArtistNameColor,
+                    style = MaterialTheme.typography.bodySmall,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
                 )
+                else -> Unit
             }
         }
 
         MediaControls(event, interactor, accent)
-        if (event.duration > 0L) {
+        if (event.duration > 0L && lunaris.showSeekBar) {
             MediaSeekBar(event, interactor, accent, useWaveform)
         }
     }
@@ -304,6 +357,9 @@ private fun MediaControls(
 ) {
     val onAccent = chipContentColorOn(accent)
     val tonalBg = accent.copy(alpha = AlphaSubtle)
+    val lunaris = LocalLunarisBarConfig.current
+    val haptic = LocalHapticFeedback.current
+    val playShape = lunaris.playbackButtonCornerShape()
     var prevToggleCount by remember { mutableIntStateOf(0) }
     var playPauseToggleCount by remember { mutableIntStateOf(0) }
     var nextToggleCount by remember { mutableIntStateOf(0) }
@@ -318,6 +374,7 @@ private fun MediaControls(
         Surface(
             onClick = {
                 interactor.skipPrev()
+                if (lunaris.musicHaptics) haptic.performHapticFeedback(HapticFeedbackType.LongPress)
                 prevToggleCount++
             },
             shape = CircleShape,
@@ -338,10 +395,11 @@ private fun MediaControls(
         Surface(
             onClick = {
                 interactor.togglePlayPause()
+                if (lunaris.musicHaptics) haptic.performHapticFeedback(HapticFeedbackType.LongPress)
                 playPauseToggleCount++
             },
-            shape = CircleShape,
-            color = accent,
+            shape = playShape ?: CircleShape,
+            color = if (playShape != null) accent else Color.Transparent,
             modifier = Modifier
                 .size(PlayPauseSize)
                 .squishAnimation(playPauseToggleCount),
@@ -353,7 +411,7 @@ private fun MediaControls(
                         stringResource(R.string.ax_dynamic_bar_pause)
                     else
                         stringResource(R.string.ax_dynamic_bar_play),
-                    tint = onAccent,
+                    tint = if (playShape != null) onAccent else accent,
                     modifier = Modifier.size(26.dp),
                 )
             }
@@ -362,6 +420,7 @@ private fun MediaControls(
         Surface(
             onClick = {
                 interactor.skipNext()
+                if (lunaris.musicHaptics) haptic.performHapticFeedback(HapticFeedbackType.LongPress)
                 nextToggleCount++
             },
             shape = CircleShape,
@@ -400,6 +459,8 @@ private fun MediaSeekBar(
     var displayFraction by remember { mutableStateOf(serverFraction) }
 
     val interactorRef = rememberUpdatedState(interactor)
+    val musicHapticsRef = rememberUpdatedState(LocalLunarisBarConfig.current.musicHaptics)
+    val haptic = LocalHapticFeedback.current
     val swipeLock = LocalDismissSwipeLock.current
 
     LaunchedEffect(positionMs, durationMs, isPlaying) {
@@ -455,6 +516,7 @@ private fun MediaSeekBar(
                         val fraction = (offset.x / size.width.toFloat()).coerceIn(0f, 1f)
                         displayFraction = fraction
                         interactorRef.value.seekTo((fraction * durationMs).toLong())
+                        if (musicHapticsRef.value) haptic.performHapticFeedback(HapticFeedbackType.LongPress)
                     }
                 }
                 .pointerInput("drag") {
@@ -465,6 +527,7 @@ private fun MediaSeekBar(
                         },
                         onDragEnd = {
                             interactorRef.value.seekTo((displayFraction * durationMs).toLong())
+                            if (musicHapticsRef.value) haptic.performHapticFeedback(HapticFeedbackType.LongPress)
                             isScrubbing = false
                         },
                         onDragCancel = { isScrubbing = false },
@@ -736,6 +799,36 @@ internal fun RowScope.CompactMediaRow(
                 tint = OnActionText,
                 modifier = Modifier.size(18.dp),
             )
+        }
+    }
+}
+
+/** Spins the album art by 360 degrees every 20 s while [spinning]; holds its angle otherwise. */
+@Composable
+private fun rememberAlbumSpin(spinning: Boolean): Animatable<Float, AnimationVector1D> {
+    val spin = remember { Animatable(0f) }
+    LaunchedEffect(spinning) {
+        while (spinning) {
+            val start = spin.value % 360f
+            spin.snapTo(start)
+            spin.animateTo(
+                targetValue = start + 360f,
+                animationSpec = tween(durationMillis = 20_000, easing = LinearEasing),
+            )
+        }
+    }
+    return spin
+}
+
+/** Application label of the media app, or the package name when it cannot be resolved. */
+@Composable
+private fun rememberPlayerLabel(packageName: String): String {
+    val pm = LocalContext.current.packageManager
+    return remember(packageName) {
+        try {
+            pm.getApplicationLabel(pm.getApplicationInfo(packageName, 0)).toString()
+        } catch (_: Exception) {
+            packageName
         }
     }
 }

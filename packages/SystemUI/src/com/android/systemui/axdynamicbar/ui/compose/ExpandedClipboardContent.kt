@@ -281,7 +281,7 @@ internal fun RowScope.CompactClipboardRow(
     Spacer(Modifier.width(SpaceMd))
     Surface(
         onClick = { interactor.dismissEvent(event) },
-        shape = ShapeChip,
+        shape = cardButtonShapeOr(ShapeChip),
         color = IndigoAccent.copy(alpha = AlphaIconBg),
     ) {
         Text(

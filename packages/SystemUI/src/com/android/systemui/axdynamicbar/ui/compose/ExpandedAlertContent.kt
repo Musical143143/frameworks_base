@@ -94,7 +94,7 @@ internal fun RowScope.CompactAlarmRow(
         Spacer(Modifier.width(SpaceMd))
         Surface(
             onClick = { interactor.dismissEvent(event) },
-            shape = ShapeChip,
+            shape = cardButtonShapeOr(ShapeChip),
             color = OrangeAccent.copy(alpha = AlphaIconBg),
         ) {
             Text(

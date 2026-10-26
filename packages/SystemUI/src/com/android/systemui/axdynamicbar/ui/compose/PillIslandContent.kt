@@ -150,6 +150,7 @@ internal fun PillEventIcon(
     event: IslandEvent,
     tint: Color? = null,
     animated: Boolean = true,
+    animateEqualizer: Boolean = true,
 ) {
     if (!animated) {
         StaticPillEventIcon(event, tint)
@@ -157,10 +158,12 @@ internal fun PillEventIcon(
     }
     when (event) {
         is IslandEvent.AudioRecording -> AudioRecordingPillIcon(event, tint)
-        is IslandEvent.Media -> MediaPillIcon(event)
+        is IslandEvent.Media -> MediaPillIcon(event, animated = animateEqualizer)
         is IslandEvent.PromotedOngoing -> PromotedOngoingPillIcon(event, tint)
         is IslandEvent.Sports -> SportsPillIcon(event)
-        is IslandEvent.NowPlaying -> AnimatedNowPlayingIcon(tint ?: MintAccent)
+        is IslandEvent.NowPlaying ->
+            if (animateEqualizer) AnimatedNowPlayingIcon(tint ?: MintAccent)
+            else StaticPillEventIcon(event, tint)
         is IslandEvent.Bluetooth -> AnimatedBluetoothIcon(tint ?: BlueAccent)
         is IslandEvent.Hotspot -> AnimatedHotspotIcon(tint ?: TealAccent)
         is IslandEvent.Charging -> AnimatedBoltIcon(tint ?: GreenAccent)

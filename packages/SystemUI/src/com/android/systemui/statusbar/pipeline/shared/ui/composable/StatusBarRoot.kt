@@ -583,10 +583,19 @@ private fun addStartSideComposable(
                     }
 
                 val axEnabled by axDynamicBarChipViewModel.interactor.settings.isEnabled.collectAsState()
+                val lunarisBar by axDynamicBarChipViewModel.lunarisBar.collectAsState()
                 if (axEnabled) {
                     AxDynamicBarChip(
                         viewModel = axDynamicBarChipViewModel,
-                        modifier = Modifier.widthIn(max = chipsMaxWidth),
+                        modifier =
+                            Modifier.widthIn(
+                                max =
+                                    if (lunarisBar.cameraGapDp > 0) {
+                                        (chipsMaxWidth - lunarisBar.cameraGapDp.dp).coerceAtLeast(0.dp)
+                                    } else {
+                                        chipsMaxWidth
+                                    }
+                            ),
                     )
                 }
                 val chipsVisibilityModel = statusBarViewModel.ongoingActivityChips

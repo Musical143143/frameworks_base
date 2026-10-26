@@ -63,6 +63,10 @@ class AxDynamicBarSettings @Inject constructor(
     private val _disabledEventTypes = MutableStateFlow<Set<String>>(emptySet())
     val disabledEventTypes: StateFlow<Set<String>> = _disabledEventTypes.asStateFlow()
 
+    // LunarisBar options. Declared before init so refresh() can assign it during construction.
+    private val _lunarisBar = MutableStateFlow(LunarisBarConfig())
+    val lunarisBar: StateFlow<LunarisBarConfig> = _lunarisBar.asStateFlow()
+
     init {
         refresh()
     }
@@ -133,6 +137,14 @@ class AxDynamicBarSettings @Inject constructor(
             false,
             settingsObserver,
         )
+        LunarisBarKeys.ALL.forEach { key ->
+            contentResolver.registerContentObserver(
+                Settings.System.getUriFor(key),
+                false,
+                settingsObserver,
+                UserHandle.USER_ALL,
+            )
+        }
     }
 
     fun destroy() {
@@ -161,6 +173,7 @@ class AxDynamicBarSettings @Inject constructor(
             secureSettings.getIntForUser(KEY_COMPACT_NOTIFICATIONS, 1, UserHandle.USER_CURRENT) == 1
         _isHeadsUpEnabled.value =
             globalSettings.getInt(Global.HEADS_UP_NOTIFICATIONS_ENABLED, 1) == 1
+        _lunarisBar.value = readLunarisBarConfig(contentResolver)
 
         val json = secureSettings.getStringForUser(KEY_EVENTS, UserHandle.USER_CURRENT) ?: ""
         _disabledEventTypes.value =

@@ -5,7 +5,13 @@ import android.graphics.PixelFormat
 import android.view.Gravity
 import android.view.WindowManager
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.EnterTransition
+import androidx.compose.animation.ExitTransition
+import androidx.compose.animation.core.FiniteAnimationSpec
 import androidx.compose.animation.core.MutableTransitionState
+import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.snap
+import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -19,6 +25,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.runtime.getValue
@@ -47,8 +54,13 @@ import androidx.savedstate.SavedStateRegistryOwner
 import androidx.savedstate.setViewTreeSavedStateRegistryOwner
 import com.android.compose.theme.PlatformTheme
 import com.android.systemui.shared.recents.utilities.Utilities
+import com.android.systemui.axdynamicbar.domain.LocalLunarisBarConfig
+import com.android.systemui.axdynamicbar.domain.LunarisBarConfig
 import com.android.systemui.axdynamicbar.model.IslandEvent
 import com.android.systemui.axdynamicbar.shared.ExpandedMaxWidth
+import com.android.systemui.axdynamicbar.shared.allowsExpandedCard
+import com.android.systemui.axdynamicbar.shared.bounceDampingRatio
+import com.android.systemui.axdynamicbar.shared.scaledDurationMillis
 import com.android.systemui.axdynamicbar.ui.compose.ExpandedIslandContent
 import com.android.systemui.axdynamicbar.ui.compose.NotificationAlertCard
 import com.android.systemui.dagger.SysUISingleton
@@ -246,11 +258,31 @@ constructor(
 
 @Composable
 private fun OverlayContent(viewModel: AxDynamicBarChipViewModel, statusBarHeightPx: Int, hasCutout: Boolean) {
+    val lunaris by viewModel.lunarisBar.collectAsStateWithLifecycle()
+    CompositionLocalProvider(LocalLunarisBarConfig provides lunaris) {
+        OverlayBody(viewModel, statusBarHeightPx, hasCutout, lunaris)
+    }
+}
+
+// Clock cards (alarm and stopwatch) are always allowed here. The shared default of cardClock is
+// false, so filtering them would hide them for every user. Once that default is true, route these
+// through lunaris.allowsExpandedCard(event) as well.
+private fun LunarisBarConfig.showsExpandedCard(event: IslandEvent): Boolean =
+    allowsExpandedCard(event)
+
+@Composable
+private fun OverlayBody(
+    viewModel: AxDynamicBarChipViewModel,
+    statusBarHeightPx: Int,
+    hasCutout: Boolean,
+    lunaris: LunarisBarConfig,
+) {
     val density = LocalDensity.current
     val isLargeScreen = Utilities.isLargeScreen(LocalContext.current)
 
     val largeScreenExtra = if (isLargeScreen) 4.dp else 0.dp
     val topPad = if (hasCutout) largeScreenExtra
+        else if (lunaris.expansionPlacement == 1) 0.dp
         else with(density) { statusBarHeightPx.toDp() } + largeScreenExtra
     val chipState by viewModel.chipState.collectAsStateWithLifecycle()
     val isExpanded by viewModel.isExpanded.collectAsStateWithLifecycle()
@@ -274,27 +306,37 @@ private fun OverlayContent(viewModel: AxDynamicBarChipViewModel, statusBarHeight
         notifVisible.targetState = showNotif
     }
 
-    LaunchedEffect(chipState) {
-        val filtered = chipState?.allEvents?.filter { it !is IslandEvent.AospChip }
+    LaunchedEffect(chipState, lunaris) {
+        val filtered = chipState?.allEvents?.filter {
+            it !is IslandEvent.AospChip && lunaris.showsExpandedCard(it)
+        }
         if (filtered.isNullOrEmpty() && isExpanded) {
             viewModel.statusBarExpansion.collapse()
         }
     }
 
     val origin = TransformOrigin(0.5f, 0f)
+    // Overlay motion. Default (tween, 100%, no reduce) gives the same specs as before.
+    val bounceRatio = lunaris.bounceDampingRatio() ?: Spring.DampingRatioMediumBouncy
+    fun motion(ms: Int): FiniteAnimationSpec<Float> = when {
+        lunaris.reduceAnimations -> snap<Float>()
+        lunaris.expansionStyle == 0 -> spring<Float>(dampingRatio = bounceRatio)
+        else -> tween<Float>(lunaris.scaledDurationMillis(ms))
+    }
+    val scaleEnabled = lunaris.originalPopupAnimation
 
     AnimatedVisibility(
         visibleState = expandedVisible,
-        enter = fadeIn(tween(250)) + scaleIn(
-            animationSpec = tween(350),
+        enter = fadeIn(motion(250)) + (if (scaleEnabled) scaleIn(
+            animationSpec = motion(350),
             initialScale = 0.4f,
             transformOrigin = origin,
-        ),
-        exit = fadeOut(tween(200)) + scaleOut(
-            animationSpec = tween(250),
+        ) else EnterTransition.None),
+        exit = fadeOut(motion(200)) + (if (scaleEnabled) scaleOut(
+            animationSpec = motion(250),
             targetScale = 0.4f,
             transformOrigin = origin,
-        ),
+        ) else ExitTransition.None),
     ) {
         
         Box(
@@ -346,7 +388,9 @@ private fun OverlayContent(viewModel: AxDynamicBarChipViewModel, statusBarHeight
             contentAlignment = Alignment.TopCenter,
         ) {
             chipState?.let { state ->
-                val filtered = state.allEvents.filter { it !is IslandEvent.AospChip }
+                val filtered = state.allEvents.filter {
+                    it !is IslandEvent.AospChip && lunaris.showsExpandedCard(it)
+                }
                 if (filtered.isEmpty()) return@let
                 Box(
                     modifier =
@@ -370,16 +414,16 @@ private fun OverlayContent(viewModel: AxDynamicBarChipViewModel, statusBarHeight
 
     AnimatedVisibility(
         visibleState = notifVisible,
-        enter = fadeIn(tween(300)) + scaleIn(
-            animationSpec = tween(300),
+        enter = fadeIn(motion(300)) + (if (scaleEnabled) scaleIn(
+            animationSpec = motion(300),
             initialScale = 0.4f,
             transformOrigin = origin,
-        ),
-        exit = fadeOut(tween(250)) + scaleOut(
-            animationSpec = tween(250),
+        ) else EnterTransition.None),
+        exit = fadeOut(motion(250)) + (if (scaleEnabled) scaleOut(
+            animationSpec = motion(250),
             targetScale = 0.4f,
             transformOrigin = origin,
-        ),
+        ) else ExitTransition.None),
     ) {
         Box(
             modifier = Modifier
@@ -395,7 +439,8 @@ private fun OverlayContent(viewModel: AxDynamicBarChipViewModel, statusBarHeight
                     onDismiss = { viewModel.interactor.dismissNotificationAlert() },
                     initiallyCompact = compactNotifs,
                     modifier =
-                        Modifier.widthIn(max = ExpandedMaxWidth)
+                        (if (lunaris.expandedWidth == 1) Modifier
+                            else Modifier.widthIn(max = ExpandedMaxWidth))
                             .fillMaxWidth()
                             .padding(horizontal = 12.dp),
                 )

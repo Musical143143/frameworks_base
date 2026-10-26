@@ -42,6 +42,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
@@ -50,6 +51,7 @@ import androidx.compose.ui.unit.dp
 import com.android.systemui.axdynamicbar.shared.IslandActions
 import com.android.systemui.haptics.slider.compose.ui.SliderHapticsViewModel
 import kotlinx.coroutines.delay
+import com.android.systemui.axdynamicbar.domain.LocalLunarisBarConfig
 import com.android.systemui.axdynamicbar.model.IslandEvent
 import com.android.systemui.axdynamicbar.shared.*
 import com.android.systemui.res.R
@@ -65,6 +67,7 @@ fun ExpandedIslandContent(
     pinnedEventId: String? = null,
     hapticsViewModelFactory: SliderHapticsViewModel.Factory,
 ) {
+    val lunaris = LocalLunarisBarConfig.current
     if (events.isEmpty()) return
 
     val filteredEvents =
@@ -119,7 +122,8 @@ fun ExpandedIslandContent(
 
     LazyColumn(
         modifier =
-            Modifier.widthIn(max = ExpandedMaxWidth)
+            (if (lunaris.expandedWidth == 1) Modifier.fillMaxWidth()
+                else Modifier.widthIn(max = ExpandedMaxWidth))
                 .wrapContentHeight(),
         verticalArrangement = Arrangement.spacedBy(SpaceMd),
         contentPadding =
@@ -132,7 +136,7 @@ fun ExpandedIslandContent(
                     item(key = event.id) {
                         MagneticSwipeToDismiss(
                             onDismiss = { interactor.dismissEvent(event) },
-                            modifier = Modifier.animateItem(),
+                            modifier = if (lunaris.reduceAnimations) Modifier else Modifier.animateItem(),
                         ) {
                             PrimaryCard { NotificationExpanded(event, interactor) }
                         }
@@ -143,7 +147,7 @@ fun ExpandedIslandContent(
                     item(key = "group_$pkg") {
                         MagneticSwipeToDismiss(
                             onDismiss = { group.forEach { interactor.dismissEvent(it) } },
-                            modifier = Modifier.animateItem(),
+                            modifier = if (lunaris.reduceAnimations) Modifier else Modifier.animateItem(),
                         ) {
                             PrimaryCard {
                                 NotificationGroupCard(
@@ -161,7 +165,7 @@ fun ExpandedIslandContent(
             items(filteredEvents, key = { it.id }) { event ->
                 MagneticSwipeToDismiss(
                     onDismiss = { interactor.dismissEvent(event) },
-                    modifier = Modifier.animateItem(),
+                    modifier = if (lunaris.reduceAnimations) Modifier else Modifier.animateItem(),
                 ) {
                     if (event is IslandEvent.Media) {
                         MediaCard(event, interactor)
@@ -170,15 +174,15 @@ fun ExpandedIslandContent(
                             AnimatedContent(
                                 targetState = event,
                                 transitionSpec = {
-                                    ((fadeIn(tween(180)) +
+                                    ((fadeIn(tween(lunaris.scaledDurationMillis(180))) +
                                         scaleIn(
                                             initialScale = 0.95f,
-                                            animationSpec = tween(250),
+                                            animationSpec = tween(lunaris.scaledDurationMillis(250)),
                                         )) togetherWith
-                                        (fadeOut(tween(120)) +
+                                        (fadeOut(tween(lunaris.scaledDurationMillis(120))) +
                                             scaleOut(
                                                 targetScale = 0.95f,
-                                                animationSpec = tween(200),
+                                                animationSpec = tween(lunaris.scaledDurationMillis(200)),
                                             ))).using(sizeTransform = null)
                                 },
                                 contentKey = { it::class.simpleName + it.id },
@@ -362,12 +366,41 @@ private fun CallElapsedTimer(startTimeMs: Long, color: Color) {
 
 @Composable
 internal fun PrimaryCard(content: @Composable () -> Unit) {
+    val lunaris = LocalLunarisBarConfig.current
+    // Default config: cardCornerShape() and expandedBackgroundCornerShape() are both 28dp, the
+    // same as ShapeCard. Outline replaces the gradient hairline; shadow is drawn before the clip.
+    val cardShape = lunaris.cardCornerShape()
+    val fillShape = lunaris.expandedBackgroundCornerShape()
+    val shadowDp = lunaris.shadowElevationDp
+    val outlineDp = lunaris.outlineWidthDp
     Box(
         modifier =
             Modifier.fillMaxWidth()
-                .clip(ShapeCard)
-                .background(CardBg)
-                .border(1.dp, CardBorderBrush, ShapeCard)
+                .then(
+                    if (shadowDp > 0) {
+                        Modifier.shadow(
+                            elevation = shadowDp.dp,
+                            shape = cardShape,
+                            clip = false,
+                            ambientColor = lunaris.shadowColor(),
+                            spotColor = lunaris.shadowColor(),
+                        )
+                    } else {
+                        Modifier
+                    }
+                )
+                .clip(cardShape)
+                .then(
+                    if (fillShape == cardShape) Modifier.background(CardBg)
+                    else Modifier.background(CardBg, fillShape)
+                )
+                .then(
+                    if (outlineDp > 0) {
+                        Modifier.border(outlineDp.dp, lunaris.outlineColor(), cardShape)
+                    } else {
+                        Modifier.border(1.dp, CardBorderBrush, cardShape)
+                    }
+                )
                 .padding(SpaceXxl)
     ) {
         content()

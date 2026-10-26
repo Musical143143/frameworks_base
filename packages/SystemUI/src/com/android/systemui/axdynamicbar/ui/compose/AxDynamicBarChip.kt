@@ -2,7 +2,37 @@ package com.android.systemui.axdynamicbar.ui.compose
 
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.EnterTransition
+import androidx.compose.animation.ExitTransition
 import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.FiniteAnimationSpec
+import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.spring
+import androidx.compose.foundation.border
+import androidx.compose.foundation.layout.offset
+import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.graphics.Shape
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.platform.LocalHapticFeedback
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.runtime.CompositionLocalProvider
+import android.content.Context
+import android.content.Intent
+import android.os.SystemClock
+import kotlinx.coroutines.withTimeoutOrNull
+import com.android.systemui.axdynamicbar.domain.LocalLunarisBarConfig
+import com.android.systemui.axdynamicbar.domain.LunarisBarConfig
+import com.android.systemui.axdynamicbar.shared.SubtleGray
+import com.android.systemui.axdynamicbar.shared.bounceDampingRatio
+import com.android.systemui.axdynamicbar.shared.compactChipBackground
+import com.android.systemui.axdynamicbar.shared.compactChipContent
+import com.android.systemui.axdynamicbar.shared.compactChipShape
+import com.android.systemui.axdynamicbar.shared.musicCardBackground
+import com.android.systemui.axdynamicbar.shared.musicCardContent
+import com.android.systemui.axdynamicbar.shared.outlineColor
+import com.android.systemui.axdynamicbar.shared.resolvedCompactShape
+import com.android.systemui.axdynamicbar.shared.scaledDurationMillis
+import com.android.systemui.axdynamicbar.shared.shadowColor
 import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.animation.fadeIn
@@ -99,18 +129,44 @@ fun AxDynamicBarChip(
     modifier: Modifier = Modifier,
     ignoreKeyguard: Boolean = false,
 ) {
+    val lunarisBar by viewModel.lunarisBar.collectAsStateWithLifecycle()
+    CompositionLocalProvider(LocalLunarisBarConfig provides lunarisBar) {
+        AxDynamicBarChipContent(
+            viewModel = viewModel,
+            modifier = modifier,
+            ignoreKeyguard = ignoreKeyguard,
+        )
+    }
+}
+
+@OptIn(ExperimentalMaterial3ExpressiveApi::class)
+@Composable
+private fun AxDynamicBarChipContent(
+    viewModel: AxDynamicBarChipViewModel,
+    modifier: Modifier,
+    ignoreKeyguard: Boolean,
+) {
+    val lunaris = LocalLunarisBarConfig.current
+    val haptics = LocalHapticFeedback.current
+    val context = LocalContext.current
     val state by viewModel.chipState.collectAsStateWithLifecycle()
     val isOnKeyguard by viewModel.isOnKeyguard.collectAsStateWithLifecycle()
     val keyguardCarrier by viewModel.keyguardCarrierText.collectAsStateWithLifecycle()
     val chipStyle by viewModel.chipStyle.collectAsStateWithLifecycle()
     val isMediaEventTypeEnabled by viewModel.isMediaEventTypeEnabled.collectAsStateWithLifecycle()
+    val isExpanded by viewModel.isExpanded.collectAsStateWithLifecycle()
+    val mediaChipEnabled = isMediaEventTypeEnabled && lunaris.showMusicChip
+    val chipShape: Shape =
+        if (lunaris.compactShape == null) ChipShape else lunaris.compactChipShape(chipStyle == 1)
+    val widthScale = lunaris.chipScalePct * lunaris.chipWidthPct / 10000f
+    val heightScale = lunaris.chipScalePct * lunaris.chipHeightPct / 10000f
 
     var toggleCount by remember { mutableIntStateOf(0) }
 
     val displayEvent: IslandEvent? = state?.let { chipState ->
         val raw = chipState.notificationAlert ?: chipState.event
         when {
-            isMediaEventTypeEnabled -> raw
+            mediaChipEnabled -> raw
             raw is IslandEvent.Media -> chipState.allEvents.firstOrNull { it !is IslandEvent.Media }
             else -> raw
         }
@@ -127,14 +183,106 @@ fun AxDynamicBarChip(
 
     val motionScheme = MaterialTheme.motionScheme
 
+    val viewConfig = LocalViewConfiguration.current
+
+    // Runs one configured chip action. Tap action 1 is the existing expand toggle.
+    val currentDisplayEvent by rememberUpdatedState(displayEvent)
+    val runGestureAction: (Int, Boolean) -> Unit = { action, withHaptic ->
+        if (withHaptic && lunaris.hapticFeedback) {
+            haptics.performHapticFeedback(HapticFeedbackType.LongPress)
+        }
+        when (action) {
+            1 -> {
+                val wasExpanded = viewModel.statusBarExpansion.isExpanded.value
+                val current = state?.event
+                val handledByAosp =
+                    current is IslandEvent.AospChip &&
+                        viewModel.handleAospChipTap(current, expandableController.expandable)
+                if (!handledByAosp) {
+                    viewModel.statusBarExpansion.toggle()
+                    if (!wasExpanded) toggleCount++
+                }
+            }
+            2 -> {
+                val pkg = currentDisplayEvent?.let { chipAppPackage(it) }
+                val intent =
+                    if (pkg.isNullOrEmpty()) null
+                    else context.packageManager.getLaunchIntentForPackage(pkg)
+                if (intent != null) {
+                    intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                    try {
+                        context.startActivity(intent)
+                    } catch (_: Exception) {
+                    }
+                } else {
+                    viewModel.interactor.openMediaApp()
+                }
+            }
+            3 -> viewModel.togglePlayPause()
+            4 -> viewModel.skipNext()
+            else -> Unit
+        }
+    }
+
+    val chipVisible =
+        state != null &&
+            displayEvent != null &&
+            (ignoreKeyguard || !isOnKeyguard) &&
+            (lunaris.showPeekChip || isExpanded) &&
+            !(lunaris.hidePaused && displayEvent is IslandEvent.Media && !displayEvent.isPlaying)
+
+    // Resting capsule shown when nothing is displayed and the option keeps it visible.
+    if (lunaris.keepCapsuleVisible && state == null) {
+        val capsuleHeight = lunaris.restingHeightDp.dp
+        Box(
+            modifier =
+                modifier
+                    .padding(start = 4.dp, end = 2.dp)
+                    .size(width = capsuleHeight * 2f, height = capsuleHeight)
+                    .clip(lunaris.compactChipShape(chipStyle == 1))
+                    .background(lunaris.compactChipBackground(SubtleGray))
+        )
+    }
+
+    val bounce = lunaris.bounceDampingRatio()
+    val enterSpatial: FiniteAnimationSpec<Float> =
+        if (bounce != null) spring(dampingRatio = bounce, stiffness = Spring.StiffnessMediumLow)
+        else motionScheme.defaultSpatialSpec()
+    val exitSpatial: FiniteAnimationSpec<Float> =
+        if (bounce != null) spring(dampingRatio = bounce, stiffness = Spring.StiffnessMediumLow)
+        else motionScheme.fastSpatialSpec()
+    val enterTransition: EnterTransition =
+        when {
+            lunaris.reduceAnimations -> EnterTransition.None
+            lunaris.fadeChipAppear ->
+                fadeIn(motionScheme.defaultEffectsSpec()) +
+                    scaleIn(initialScale = 0.8f, animationSpec = enterSpatial)
+            else -> scaleIn(initialScale = 0.8f, animationSpec = enterSpatial)
+        }
+    val exitTransition: ExitTransition =
+        if (lunaris.reduceAnimations) ExitTransition.None
+        else
+            fadeOut(motionScheme.fastEffectsSpec()) +
+                scaleOut(targetScale = 0.8f, animationSpec = exitSpatial)
+
     AnimatedVisibility(
-        visible = state != null && displayEvent != null && (ignoreKeyguard || !isOnKeyguard),
-        enter = fadeIn(motionScheme.defaultEffectsSpec()) + scaleIn(initialScale = 0.8f, animationSpec = motionScheme.defaultSpatialSpec()),
-        exit = fadeOut(motionScheme.fastEffectsSpec()) + scaleOut(targetScale = 0.8f, animationSpec = motionScheme.fastSpatialSpec()),
+        visible = chipVisible,
+        enter = enterTransition,
+        exit = exitTransition,
         modifier = modifier
+            .then(
+                if (lunaris.horizontalPositionDp != 0 || lunaris.verticalPositionDp != 0) {
+                    Modifier.offset(
+                        x = lunaris.horizontalPositionDp.dp,
+                        y = lunaris.verticalPositionDp.dp,
+                    )
+                } else {
+                    Modifier
+                }
+            )
             .padding(start = 4.dp, end = 2.dp)
-            .widthIn(min = 25.dp, max = 90.dp)
-            .pointerInput(viewModel) {
+            .widthIn(min = 25.dp, max = (90.dp * widthScale).coerceAtLeast(25.dp))
+            .pointerInput(viewModel, lunaris) {
                 awaitEachGesture {
                     val down = awaitFirstDown(pass = PointerEventPass.Initial)
                     
@@ -142,9 +290,27 @@ fun AxDynamicBarChip(
                     val startY = down.position.y
                     var dragging = false
                     var totalDx = 0f
-                    var decided = false 
+                    var decided = false
+                    var longPressArmed = lunaris.gestureLongPress != 0
+                    var longPressFired = false
+                    val longPressDeadline = down.uptimeMillis + viewConfig.longPressTimeoutMillis 
                     while (true) {
-                        val event = awaitPointerEvent(PointerEventPass.Initial)
+                        val event =
+                            if (longPressArmed) {
+                                withTimeoutOrNull(
+                                    (longPressDeadline - SystemClock.uptimeMillis()).coerceAtLeast(1L)
+                                ) {
+                                    awaitPointerEvent(PointerEventPass.Initial)
+                                }
+                            } else {
+                                awaitPointerEvent(PointerEventPass.Initial)
+                            }
+                        if (event == null) {
+                            // Held still past the long press timeout.
+                            longPressFired = true
+                            runGestureAction(lunaris.gestureLongPress, true)
+                            break
+                        }
                         val change = event.changes.firstOrNull() ?: break
                         if (!change.pressed) {
                             
@@ -155,16 +321,26 @@ fun AxDynamicBarChip(
                             } else if (!decided) {
 
                                 change.consume()
-                                val wasExpanded = viewModel.statusBarExpansion.isExpanded.value
-                                val current = state?.event
-                                if (current is IslandEvent.AospChip) {
-                                    if (!viewModel.handleAospChipTap(current, expandableController.expandable)) {
-                                        viewModel.statusBarExpansion.toggle()
-                                        if (!wasExpanded) toggleCount++
-                                    }
+                                if (lunaris.gestureDoubleTap == 0) {
+                                    runGestureAction(lunaris.gestureTap, false)
                                 } else {
-                                    viewModel.statusBarExpansion.toggle()
-                                    if (!wasExpanded) toggleCount++
+                                    // Wait for a possible second tap before acting on this one.
+                                    val second =
+                                        withTimeoutOrNull(viewConfig.doubleTapTimeoutMillis) {
+                                            awaitFirstDown(pass = PointerEventPass.Initial)
+                                        }
+                                    if (second == null) {
+                                        runGestureAction(lunaris.gestureTap, false)
+                                    } else {
+                                        second.consume()
+                                        while (true) {
+                                            val held = awaitPointerEvent(PointerEventPass.Initial)
+                                            val heldChange = held.changes.firstOrNull() ?: break
+                                            heldChange.consume()
+                                            if (!heldChange.pressed) break
+                                        }
+                                        runGestureAction(lunaris.gestureDoubleTap, true)
+                                    }
                                 }
                             }
                             
@@ -177,6 +353,7 @@ fun AxDynamicBarChip(
                                 
                                 decided = true
                                 dragging = true
+                                longPressArmed = false
                                 totalDx = dx
                                 change.consume()
                             } else {
@@ -187,6 +364,15 @@ fun AxDynamicBarChip(
                         } else if (dragging) {
                             totalDx = dx
                             change.consume()
+                        }
+                    }
+                    if (longPressFired) {
+                        // Hold until release so the rest of this press fires nothing else.
+                        while (true) {
+                            val held = awaitPointerEvent(PointerEventPass.Initial)
+                            val heldChange = held.changes.firstOrNull() ?: break
+                            heldChange.consume()
+                            if (!heldChange.pressed) break
                         }
                     }
                 }
@@ -212,7 +398,9 @@ fun AxDynamicBarChip(
                 AnimatedContent(
                     targetState = chipDisplayKey(displayEvent, isAlert),
                     transitionSpec = {
-                        ((
+                        if (lunaris.reduceAnimations) {
+                            (EnterTransition.None togetherWith ExitTransition.None).using(sizeTransform = null)
+                        } else ((
                             fadeIn(motionScheme.defaultEffectsSpec()) +
                                 scaleIn(
                                     initialScale = 0.92f,
@@ -231,15 +419,32 @@ fun AxDynamicBarChip(
                 ) {
                     val event = displayEvent
                     val rawAccent = chipAccentColorFor(event)
-                    val accent by animateColorAsState(rawAccent, MaterialTheme.motionScheme.fastEffectsSpec(), label = "accent")
+                    val isMusicChip = lunaris.customizeMusicChip && event is IslandEvent.Media
+                    val styledBase =
+                        if (isMusicChip) lunaris.musicCardBackground(rawAccent)
+                        else lunaris.compactChipBackground(rawAccent)
+                    val styledAccent =
+                        if (lunaris.blurChip) styledBase.copy(alpha = styledBase.alpha * 0.6f)
+                        else styledBase
+                    val accent by animateColorAsState(styledAccent, MaterialTheme.motionScheme.fastEffectsSpec(), label = "accent")
                     val contentColor by animateColorAsState(
-                        chipContentColorOn(rawAccent), MaterialTheme.motionScheme.fastEffectsSpec(), label = "content",
+                        if (isMusicChip) lunaris.musicCardContent(chipContentColorOn(styledAccent))
+                        else lunaris.compactChipContent(chipContentColorOn(styledAccent)),
+                        MaterialTheme.motionScheme.fastEffectsSpec(), label = "content",
                     )
-                    val statusBarEventCount = remember(chipState.allEvents, isMediaEventTypeEnabled) {
-                        if (isMediaEventTypeEnabled) chipState.eventCount
+                    val statusBarEventCount = remember(chipState.allEvents, mediaChipEnabled) {
+                        if (mediaChipEnabled) chipState.eventCount
                         else chipState.allEvents.count { it !is IslandEvent.Media }
                     }
-                val useCircleStyle = chipStyle == 1 &&
+                val appLabel: String? =
+                    if (lunaris.playerIdentification == 1) chipAppLabel(context, event) else null
+                val trailingDrawable: Drawable? =
+                    when (lunaris.trailingContent) {
+                        0 -> chipAppIcon(event)
+                        1 -> (event as? IslandEvent.Media)?.albumArt
+                        else -> null
+                    }
+                val useCircleStyle = lunaris.resolvedCompactShape(chipStyle == 1) == 0 &&
                         !isAlert &&
                         event !is IslandEvent.AudioRecording &&
                         event !is IslandEvent.Timer &&
@@ -258,7 +463,9 @@ fun AxDynamicBarChip(
                             accent = accent,
                             contentColor = contentColor,
                             progress = progress,
-                            modifier = Modifier.squishAnimation(toggleCount),
+                            modifier =
+                                if (lunaris.reduceAnimations) Modifier
+                                else Modifier.squishAnimation(toggleCount, lunaris),
                         )
                     }
                 } else {
@@ -268,11 +475,16 @@ fun AxDynamicBarChip(
                 ) {
                     Row(
                         modifier =
-                            Modifier.height(ChipHeight)
-                                .widthIn(max = 100.dp)
-                                .clip(ChipShape)
-                                .squishAnimation(toggleCount)
+                            Modifier.height(ChipHeight * heightScale)
+                                .widthIn(max = 100.dp * widthScale)
+                                .chipShadow(lunaris, chipShape)
+                                .clip(chipShape)
+                                .then(
+                                    if (lunaris.reduceAnimations) Modifier
+                                    else Modifier.squishAnimation(toggleCount, lunaris)
+                                )
                                 .background(accent)
+                                .chipBorder(lunaris, chipShape)
                                 .then(
                                     if (progress != null) {
                                         val trackColor = lerp(accent, contentColor, 0.2f)
@@ -317,7 +529,7 @@ fun AxDynamicBarChip(
                             AnimatedContent(
                                 targetState = notif.sbn.key,
                                 transitionSpec = {
-                                    (fadeIn(motionScheme.defaultEffectsSpec()) togetherWith fadeOut(motionScheme.fastEffectsSpec()))
+                                    (if (lunaris.reduceAnimations) (EnterTransition.None togetherWith ExitTransition.None) else (fadeIn(motionScheme.defaultEffectsSpec()) togetherWith fadeOut(motionScheme.fastEffectsSpec())))
                                         .using(sizeTransform = null)
                                 },
                                 label = "alert_content",
@@ -358,23 +570,38 @@ fun AxDynamicBarChip(
                             Spacer(Modifier.width(SpaceXs))
                             StatusBarSportsTeamBadge(sport.team2Name, sport.team2Icon, contentColor)
                         } else {
+                            if (lunaris.playerIdentification == 1) {
+                                appLabel?.let { name ->
+                                    Text(
+                                        text = name,
+                                        style = MaterialTheme.typography.labelSmall,
+                                        color = contentColor,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis,
+                                        modifier = Modifier.widthIn(max = 56.dp),
+                                    )
+                                    Spacer(Modifier.width(SpaceXs))
+                                }
+                            }
+                            if (lunaris.playerIdentification == 0) {
                             AnimatedContent(
                                 targetState = chipIconKey(event),
                                 transitionSpec = {
-                                    (fadeIn(motionScheme.defaultEffectsSpec()) togetherWith
-                                        fadeOut(motionScheme.fastEffectsSpec()))
+                                    (if (lunaris.reduceAnimations) (EnterTransition.None togetherWith ExitTransition.None) else (fadeIn(motionScheme.defaultEffectsSpec()) togetherWith
+                                        fadeOut(motionScheme.fastEffectsSpec())))
                                         .using(sizeTransform = null)
                                 },
                                 label = "chip_icon",
                             ) {
-                                PillEventIcon(event, tint = contentColor, animated = false)
+                                PillEventIcon(event, tint = contentColor, animated = lunaris.animateEqualizer)
                             }
                             Spacer(Modifier.width(SpaceXs))
+                            }
                             AnimatedContent(
                                 targetState = textKeyFor(event),
                                 transitionSpec = {
-                                    (fadeIn(motionScheme.defaultEffectsSpec()) togetherWith
-                                        fadeOut(motionScheme.fastEffectsSpec()))
+                                    (if (lunaris.reduceAnimations) (EnterTransition.None togetherWith ExitTransition.None) else (fadeIn(motionScheme.defaultEffectsSpec()) togetherWith
+                                        fadeOut(motionScheme.fastEffectsSpec())))
                                         .using(sizeTransform = null)
                                 },
                                 label = "chip_text",
@@ -406,6 +633,15 @@ fun AxDynamicBarChip(
                                         maxLines = 1,
                                     )
                                 }
+                            }
+                            trailingDrawable?.let { trailingIcon ->
+                                Spacer(Modifier.width(SpaceXs))
+                                Image(
+                                    bitmap = trailingIcon.toScaledBitmap(16.dp),
+                                    contentDescription = null,
+                                    modifier = Modifier.size(16.dp).clip(ShapeXs),
+                                    contentScale = ContentScale.Crop,
+                                )
                             }
                         }
                     }
@@ -458,10 +694,11 @@ private fun chipIconKey(event: IslandEvent): Any =
     }
 
 @Composable
-private fun Modifier.squishAnimation(toggleCount: Int): Modifier {
+private fun Modifier.squishAnimation(toggleCount: Int, lunaris: LunarisBarConfig): Modifier {
     val scaleX = remember { Animatable(1f, visibilityThreshold = 0.01f) }
     val scaleY = remember { Animatable(1f, visibilityThreshold = 0.01f) }
     val currentToggleCount by rememberUpdatedState(toggleCount)
+    val currentLunaris by rememberUpdatedState(lunaris)
 
     LaunchedEffect(Unit) {
         snapshotFlow { currentToggleCount }
@@ -474,10 +711,10 @@ private fun Modifier.squishAnimation(toggleCount: Int): Modifier {
                         scaleX.animateTo(
                             targetValue = 1f,
                             animationSpec = keyframes {
-                                durationMillis = 400
-                                1.06f at 120 using FastOutSlowInEasing
-                                0.97f at 260
-                                1f at 400
+                                durationMillis = currentLunaris.scaledDurationMillis(400)
+                                1.06f at currentLunaris.scaledDurationMillis(120) using FastOutSlowInEasing
+                                0.97f at currentLunaris.scaledDurationMillis(260)
+                                1f at currentLunaris.scaledDurationMillis(400)
                             },
                         )
                     }
@@ -485,10 +722,10 @@ private fun Modifier.squishAnimation(toggleCount: Int): Modifier {
                         scaleY.animateTo(
                             targetValue = 1f,
                             animationSpec = keyframes {
-                                durationMillis = 400
-                                0.95f at 120 using FastOutSlowInEasing
-                                1.03f at 260
-                                1f at 400
+                                durationMillis = currentLunaris.scaledDurationMillis(400)
+                                0.95f at currentLunaris.scaledDurationMillis(120) using FastOutSlowInEasing
+                                1.03f at currentLunaris.scaledDurationMillis(260)
+                                1f at currentLunaris.scaledDurationMillis(400)
                             },
                         )
                     }
@@ -499,5 +736,65 @@ private fun Modifier.squishAnimation(toggleCount: Int): Modifier {
     return this.graphicsLayer {
         this.scaleX = scaleX.value
         this.scaleY = scaleY.value
+    }
+}
+
+private fun Modifier.chipShadow(lunaris: LunarisBarConfig, shape: Shape): Modifier =
+    if (lunaris.shadowElevationDp > 0) {
+        this.shadow(
+            elevation = lunaris.shadowElevationDp.dp,
+            shape = shape,
+            clip = false,
+            ambientColor = lunaris.shadowColor(),
+            spotColor = lunaris.shadowColor(),
+        )
+    } else {
+        this
+    }
+
+// Blur is an approximation: a faint 1dp light border when no outline is set.
+private fun Modifier.chipBorder(lunaris: LunarisBarConfig, shape: Shape): Modifier =
+    when {
+        lunaris.outlineWidthDp > 0 ->
+            this.border(lunaris.outlineWidthDp.dp, lunaris.outlineColor(), shape)
+        lunaris.blurChip -> this.border(1.dp, Color.White.copy(alpha = 0.12f), shape)
+        else -> this
+    }
+
+/** Package behind an event, or null when the event does not name one. */
+private fun chipAppPackage(event: IslandEvent): String? =
+    when (event) {
+        is IslandEvent.Media -> event.packageName.takeIf { it.isNotEmpty() }
+        is IslandEvent.AppSwitch ->
+            (event.previousApp ?: event.recentApps.firstOrNull())?.packageName
+        is IslandEvent.Notification -> event.sbn.packageName
+        else -> null
+    }
+
+private fun chipAppIcon(event: IslandEvent): Drawable? =
+    when (event) {
+        is IslandEvent.Media -> event.appIcon
+        is IslandEvent.PromotedOngoing -> event.appIcon
+        is IslandEvent.Notification -> event.appIcon
+        is IslandEvent.Call -> event.appIcon
+        is IslandEvent.Sports -> event.appIcon
+        is IslandEvent.NowPlaying -> event.appIcon
+        is IslandEvent.Timer -> event.appIcon
+        is IslandEvent.Stopwatch -> event.appIcon
+        is IslandEvent.Alarm -> event.appIcon
+        is IslandEvent.AudioRecording -> event.appIcon
+        else -> null
+    }
+
+private fun chipAppLabel(context: Context, event: IslandEvent): String? {
+    if (event is IslandEvent.PromotedOngoing && event.appName.isNotEmpty()) return event.appName
+    if (event is IslandEvent.Notification && event.appName.isNotEmpty()) return event.appName
+    val pkg = chipAppPackage(event)
+    if (pkg.isNullOrEmpty()) return null
+    return try {
+        val pm = context.packageManager
+        pm.getApplicationLabel(pm.getApplicationInfo(pkg, 0)).toString()
+    } catch (_: Exception) {
+        null
     }
 }

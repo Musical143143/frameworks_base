@@ -42,6 +42,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Shape
+import com.android.systemui.axdynamicbar.domain.LocalLunarisBarConfig
 import com.android.systemui.axdynamicbar.model.IslandEvent
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.asImageBitmap
@@ -134,11 +136,16 @@ internal val ExpandedMaxWidth = 420.dp
 internal val SubtleGray: Color
     @Composable get() = MaterialTheme.colorScheme.onSurfaceVariant
 internal val CardBg: Color
+    @Composable get() = expandedSurface(MaterialTheme.colorScheme.surfaceBright)
+/** Today's card color, unaffected by the expanded palette. Used by the music card. */
+internal val CardBgBase: Color
     @Composable get() = MaterialTheme.colorScheme.surfaceBright
+internal val OnCardTextBase: Color
+    @Composable get() = MaterialTheme.colorScheme.onSurface
 internal val DarkCard: Color
     @Composable get() = MaterialTheme.colorScheme.surfaceContainerHigh
 internal val OnCardText: Color
-    @Composable get() = MaterialTheme.colorScheme.onSurface
+    @Composable get() = expandedText(MaterialTheme.colorScheme.onSurface)
 internal val OnCardSecondary: Color
     @Composable get() = MaterialTheme.colorScheme.onSurfaceVariant
 internal val ActionBg: Color
@@ -312,6 +319,34 @@ internal fun StatusChip(text: String, color: Color = SubtleGray) {
     }
 }
 
+// Expanded-card colors and shapes from LunarisBar. With the default config each helper returns
+// its default argument unchanged.
+
+@Composable
+private fun expandedSurface(default: Color): Color {
+    val lunaris = LocalLunarisBarConfig.current
+    if (lunaris.expandedPalette == 0 && lunaris.expandedOpacityPct == 100 && !lunaris.blurExpanded) {
+        return default
+    }
+    val themed = lunaris.expandedCardBackground(default)
+    // Blur is approximated by lowering the card fill alpha; no real backdrop blur is drawn.
+    return if (lunaris.blurExpanded) themed.copy(alpha = themed.alpha * 0.8f) else themed
+}
+
+@Composable
+private fun expandedText(default: Color): Color {
+    val lunaris = LocalLunarisBarConfig.current
+    if (lunaris.expandedPalette == 0 && lunaris.theme == 0) return default
+    return lunaris.expandedCardContent(default)
+}
+
+/** Shape of an in-card button. The default card button shape keeps the given default. */
+@Composable
+internal fun cardButtonShapeOr(default: Shape): Shape {
+    val lunaris = LocalLunarisBarConfig.current
+    return if (lunaris.cardButtonShape == 0) default else lunaris.cardButtonCornerShape()
+}
+
 @Composable
 internal fun CircleButton(
     color: Color = ActionBg,
@@ -322,7 +357,7 @@ internal fun CircleButton(
     Surface(
         onClick = onClick,
         modifier = Modifier.size(size),
-        shape = CircleShape,
+        shape = cardButtonShapeOr(CircleShape),
         color = color,
     ) {
         Box(contentAlignment = Alignment.Center, modifier = Modifier.size(size)) { content() }
@@ -382,11 +417,12 @@ internal fun ActionChip(
     modifier: Modifier = Modifier,
     onClick: () -> Unit,
 ) {
+    val shape = cardButtonShapeOr(ShapeChip)
     Surface(
         onClick = onClick,
-        shape = ShapeChip,
+        shape = shape,
         color = bg,
-        modifier = modifier.border(1.2.dp, color.copy(alpha = 0.12f), ShapeChip),
+        modifier = modifier.border(1.2.dp, color.copy(alpha = 0.12f), shape),
     ) {
         Row(
             modifier = Modifier.height(SizeActionHeight).padding(horizontal = SpacePanel),
@@ -410,11 +446,12 @@ internal fun ExpressivePillButton(
     modifier: Modifier = Modifier,
     onClick: () -> Unit,
 ) {
+    val shape = cardButtonShapeOr(RoundedCornerShape(percent = 50))
     Surface(
         onClick = onClick,
-        shape = RoundedCornerShape(percent = 50),
+        shape = shape,
         color = backgroundColor,
-        modifier = modifier.border(1.2.dp, contentColor.copy(alpha = 0.12f), RoundedCornerShape(percent = 50)),
+        modifier = modifier.border(1.2.dp, contentColor.copy(alpha = 0.12f), shape),
     ) {
         Row(
             modifier = Modifier.height(SizeActionHeight).padding(horizontal = SpacePanel),
