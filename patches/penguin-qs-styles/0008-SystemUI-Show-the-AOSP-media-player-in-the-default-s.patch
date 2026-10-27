@@ -1,0 +1,30 @@
+From 3a6e94a8893dfd8bd74edebddd7abe0a406c25df Mon Sep 17 00:00:00 2001
+From: redducc <sushmit718@gmail.com>
+Date: Thu, 24 Sep 2026 11:44:28 +0000
+Subject: [PATCH] SystemUI: Show the AOSP media player in the default style's
+ shade
+
+The Penguin media card's own span setting picked it for the default style's QQS too.
+---
+ .../com/android/systemui/shade/ui/composable/ShadeScene.kt   | 5 +++--
+ 1 file changed, 3 insertions(+), 2 deletions(-)
+
+diff --git a/packages/SystemUI/compose/features/src/com/android/systemui/shade/ui/composable/ShadeScene.kt b/packages/SystemUI/compose/features/src/com/android/systemui/shade/ui/composable/ShadeScene.kt
+index bb060e5850e7..e0b3b9bb16e3 100644
+--- a/packages/SystemUI/compose/features/src/com/android/systemui/shade/ui/composable/ShadeScene.kt
++++ b/packages/SystemUI/compose/features/src/com/android/systemui/shade/ui/composable/ShadeScene.kt
+@@ -600,8 +600,9 @@ private fun ContentScope.SingleShade(
+                             if (viewModel.isQsEnabled && (viewModel.showMedia || qqsShowsMedia)) {
+                                 Element(key = Media.Elements.MediaCarousel, modifier = Modifier) {
+                                     if (
+-                                        secureIntSetting(SETTING_QS_MEDIA_SPAN, 1) < 2 ||
+-                                            secureIntSetting(SETTING_QS_MEDIA_STYLE, 0) != 0
++                                        !isDefaultStyle &&
++                                            (secureIntSetting(SETTING_QS_MEDIA_SPAN, 1) < 2 ||
++                                                secureIntSetting(SETTING_QS_MEDIA_STYLE, 0) != 0)
+                                     ) {
+                                         PenguinMediaCard(
+                                             viewModelFactory = viewModel.mediaViewModelFactory,
+-- 
+2.43.0
+

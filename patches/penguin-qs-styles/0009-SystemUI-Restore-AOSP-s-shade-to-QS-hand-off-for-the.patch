@@ -1,0 +1,162 @@
+From 6f464f5f94547577ee5a63d2346d25abaf6a2a89 Mon Sep 17 00:00:00 2001
+From: redducc <sushmit718@gmail.com>
+Date: Thu, 24 Sep 2026 11:44:29 +0000
+Subject: [PATCH] SystemUI: Restore AOSP's shade to QS hand-off for the default
+ style
+
+The late QS fade suits the styles whose QS matches QQS; in the default style the QQS tiles sat frozen until it.
+---
+ .../systemui/scene/ui/composable/SceneContainer.kt  |  7 +++++++
+ .../ui/composable/SceneContainerTransitions.kt      |  7 +++++--
+ .../composable/SceneContainerTransitionsBuilder.kt  |  2 ++
+ .../FromShadeToQuickSettingsTransition.kt           | 13 ++++++++++++-
+ 4 files changed, 26 insertions(+), 3 deletions(-)
+
+diff --git a/packages/SystemUI/compose/features/src/com/android/systemui/scene/ui/composable/SceneContainer.kt b/packages/SystemUI/compose/features/src/com/android/systemui/scene/ui/composable/SceneContainer.kt
+index 414b1c157022..bce9b2c28557 100644
+--- a/packages/SystemUI/compose/features/src/com/android/systemui/scene/ui/composable/SceneContainer.kt
++++ b/packages/SystemUI/compose/features/src/com/android/systemui/scene/ui/composable/SceneContainer.kt
+@@ -59,6 +59,8 @@ import com.android.systemui.Flags.blackScreenOnSceneContainerStartFix
+ import com.android.systemui.keyguard.ui.composable.modifier.burnInAware
+ import com.android.systemui.lifecycle.rememberActivated
+ import com.android.systemui.lifecycle.rememberViewModel
++import com.android.systemui.qs.composefragment.secureIntSetting
++import com.android.systemui.qs.shared.style.QsPanelStyle
+ import com.android.systemui.ribbon.ui.composable.BottomRightCornerRibbon
+ import com.android.systemui.scene.shared.model.Overlays
+ import com.android.systemui.scene.shared.model.SceneDataSourceDelegator
+@@ -156,6 +158,9 @@ private fun InternalSceneContainer(
+         }
+ 
+     val resources = LocalResources.current
++    val defaultQsStyle =
++        secureIntSetting(QsPanelStyle.SETTING_NAME, QsPanelStyle.Penguin.value) ==
++            QsPanelStyle.Default.value
+     val sceneTransitions =
+         remember(
+             hapticFeedback,
+@@ -163,6 +168,7 @@ private fun InternalSceneContainer(
+             animateQsTilesViewModel,
+             resources,
+             viewModel.toBouncerTransitionViewModel,
++            defaultQsStyle,
+         ) {
+             transitionsBuilder.build(
+                 shadeExpansionMotion,
+@@ -170,6 +176,7 @@ private fun InternalSceneContainer(
+                 animateQsTilesViewModel,
+                 viewModel.toBouncerTransitionViewModel,
+                 resources,
++                defaultQsStyle,
+             )
+         }
+ 
+diff --git a/packages/SystemUI/compose/features/src/com/android/systemui/scene/ui/composable/SceneContainerTransitions.kt b/packages/SystemUI/compose/features/src/com/android/systemui/scene/ui/composable/SceneContainerTransitions.kt
+index 58ca0236f966..4a527e280ce7 100644
+--- a/packages/SystemUI/compose/features/src/com/android/systemui/scene/ui/composable/SceneContainerTransitions.kt
++++ b/packages/SystemUI/compose/features/src/com/android/systemui/scene/ui/composable/SceneContainerTransitions.kt
+@@ -82,6 +82,7 @@ class SceneContainerTransitions : SceneContainerTransitionsBuilder {
+         animateQsTilesViewModel: AnimateQsTilesViewModel,
+         toBouncerTransitionViewModel: ToBouncerTransitionViewModel,
+         resources: Resources,
++        defaultQsStyle: Boolean,
+     ): SceneTransitions {
+         return transitions {
+             interruptionHandler = DefaultInterruptionHandler
+@@ -275,7 +276,8 @@ class SceneContainerTransitions : SceneContainerTransitionsBuilder {
+                 cujTag = TAG_COLLAPSE,
+             ) {
+                 quickSettingsToShadeTransition(
+-                    animateQsTilesAsShared = { animateQsTilesViewModel.animateQsTiles }
++                    animateQsTilesAsShared = { animateQsTilesViewModel.animateQsTiles },
++                    defaultQsStyle = defaultQsStyle,
+                 )
+             }
+             from(
+@@ -367,7 +369,8 @@ class SceneContainerTransitions : SceneContainerTransitionsBuilder {
+                 cujTag = TAG_EXPAND,
+             ) {
+                 shadeToQuickSettingsTransition(
+-                    animateQsTilesAsShared = { animateQsTilesViewModel.animateQsTiles }
++                    animateQsTilesAsShared = { animateQsTilesViewModel.animateQsTiles },
++                    defaultQsStyle = defaultQsStyle,
+                 )
+             }
+             from(
+diff --git a/packages/SystemUI/compose/features/src/com/android/systemui/scene/ui/composable/SceneContainerTransitionsBuilder.kt b/packages/SystemUI/compose/features/src/com/android/systemui/scene/ui/composable/SceneContainerTransitionsBuilder.kt
+index f912faaaca52..b47a7e9f6a67 100644
+--- a/packages/SystemUI/compose/features/src/com/android/systemui/scene/ui/composable/SceneContainerTransitionsBuilder.kt
++++ b/packages/SystemUI/compose/features/src/com/android/systemui/scene/ui/composable/SceneContainerTransitionsBuilder.kt
+@@ -37,6 +37,7 @@ interface SceneContainerTransitionsBuilder {
+         animateQsTilesViewModel: AnimateQsTilesViewModel,
+         toBouncerTransitionViewModel: ToBouncerTransitionViewModel,
+         resources: Resources,
++        defaultQsStyle: Boolean = false,
+     ): SceneTransitions
+ }
+ 
+@@ -53,5 +54,6 @@ class ConstantSceneContainerTransitionsBuilder(
+         animateQsTilesViewModel: AnimateQsTilesViewModel,
+         toBouncerTransitionViewModel: ToBouncerTransitionViewModel,
+         resources: Resources,
++        defaultQsStyle: Boolean,
+     ): SceneTransitions = transitions
+ }
+diff --git a/packages/SystemUI/compose/features/src/com/android/systemui/scene/ui/composable/transitions/FromShadeToQuickSettingsTransition.kt b/packages/SystemUI/compose/features/src/com/android/systemui/scene/ui/composable/transitions/FromShadeToQuickSettingsTransition.kt
+index cfd552693f37..e28cf199c0f0 100644
+--- a/packages/SystemUI/compose/features/src/com/android/systemui/scene/ui/composable/transitions/FromShadeToQuickSettingsTransition.kt
++++ b/packages/SystemUI/compose/features/src/com/android/systemui/scene/ui/composable/transitions/FromShadeToQuickSettingsTransition.kt
+@@ -13,6 +13,7 @@ import com.android.compose.animation.scene.transformation.offsetSharedElementWit
+ import com.android.systemui.media.remedia.ui.compose.Media.Elements.MediaCarousel
+ import com.android.systemui.notifications.ui.composable.Notifications
+ import com.android.systemui.qs.shared.ui.QuickSettings.Elements
++import com.android.systemui.qs.shared.ui.QuickSettings.SHARED_TILE_PICKER_THRESHOLD
+ import com.android.systemui.scene.shared.model.Scenes
+ import com.android.systemui.shade.ui.composable.ShadeHeader
+ import kotlin.time.Duration.Companion.milliseconds
+@@ -20,6 +21,7 @@ import kotlin.time.Duration.Companion.milliseconds
+ fun TransitionBuilder.shadeToQuickSettingsTransition(
+     durationScale: Double = 1.0,
+     animateQsTilesAsShared: () -> Boolean = { true },
++    defaultQsStyle: Boolean = false,
+ ) {
+     spec = tween(durationMillis = (DefaultDuration * durationScale).inWholeMilliseconds.toInt())
+     distance = UserActionDistance { fromContent, _, _ ->
+@@ -33,12 +35,19 @@ fun TransitionBuilder.shadeToQuickSettingsTransition(
+     translate(Notifications.Elements.NotificationScrim, Edge.Bottom)
+     timestampRange(endMillis = 83) { fade(Elements.FooterActions) }
+ 
+-    fractionRange(start = 0.55f, end = 0.9f) { fade(Elements.QuickSettingsContent) }
++    if (defaultQsStyle) {
++        fractionRange(start = 0.43f, end = 1f - SHARED_TILE_PICKER_THRESHOLD) {
++            fade(Elements.QuickSettingsContent)
++        }
++    } else {
++        fractionRange(start = 0.55f, end = 0.9f) { fade(Elements.QuickSettingsContent) }
++    }
+ 
+     anchoredTranslate(Elements.QuickSettingsContent, Elements.GridAnchor)
+ 
+     sharedElement(Elements.TileElementMatcher, enabled = animateQsTilesAsShared())
+ 
++    if (defaultQsStyle) fractionRange(end = 0.5f) { fade(QqsTileElementMatcher) }
+     anchoredTranslate(QqsTileElementMatcher, Elements.GridAnchor)
+     fade(MediaCarousel)
+ 
+@@ -65,11 +74,13 @@ fun TransitionBuilder.shadeToQuickSettingsTransition(
+ fun TransitionBuilder.quickSettingsToShadeTransition(
+     durationScale: Double = 1.0,
+     animateQsTilesAsShared: () -> Boolean = { true },
++    defaultQsStyle: Boolean = false,
+ ) {
+     reversed {
+         shadeToQuickSettingsTransition(
+             durationScale = durationScale,
+             animateQsTilesAsShared = animateQsTilesAsShared,
++            defaultQsStyle = defaultQsStyle,
+         )
+     }
+     // Translate the HeadsUpNotificationPlaceholder from the StackPlaceholder's start position to
+-- 
+2.43.0
+

@@ -1,0 +1,865 @@
+From 85415de538353a223bb042c1feff999d96b7e73c Mon Sep 17 00:00:00 2001
+From: redducc <sushmit718@gmail.com>
+Date: Wed, 30 Sep 2026 11:56:16 +0000
+Subject: [PATCH] SystemUI: Edit One UI Quick Settings card by card
+
+One UI now lays out on the Control Centre's grid with its own layout, cards and sizes, so every card is dragged, resized, taken out and added back as on One UI; tiles with no place of their own gather in the card of toggles, whose Edit opens the tile editor.
+---
+ .../qs/ui/composable/PenguinGridContent.kt    | 105 ++++++++++++--
+ .../qs/ui/composable/PenguinGridEditor.kt     |  53 +++++--
+ .../composable/QuickSettingsShadeOverlay.kt   |  20 +++
+ .../SystemUI/res/values/custom_strings.xml    |   5 +
+ .../qs/composefragment/OneUiQuickSettings.kt  | 130 +++++++++++++++---
+ .../qs/panels/ui/compose/PenguinGrid.kt       | 101 ++++++++++++--
+ 6 files changed, 354 insertions(+), 60 deletions(-)
+
+diff --git a/packages/SystemUI/compose/features/src/com/android/systemui/qs/ui/composable/PenguinGridContent.kt b/packages/SystemUI/compose/features/src/com/android/systemui/qs/ui/composable/PenguinGridContent.kt
+index b2f0b60d22c6..97d34a71af11 100644
+--- a/packages/SystemUI/compose/features/src/com/android/systemui/qs/ui/composable/PenguinGridContent.kt
++++ b/packages/SystemUI/compose/features/src/com/android/systemui/qs/ui/composable/PenguinGridContent.kt
+@@ -48,6 +48,7 @@ import androidx.compose.material3.Icon
+ import androidx.compose.material3.MaterialTheme
+ import androidx.compose.runtime.Composable
+ import androidx.compose.runtime.CompositionLocalProvider
++import androidx.compose.runtime.compositionLocalOf
+ import androidx.compose.runtime.DisposableEffect
+ import androidx.compose.runtime.LaunchedEffect
+ import androidx.compose.runtime.getValue
+@@ -83,6 +84,9 @@ import com.android.systemui.compose.modifiers.sysuiResTag
+ import com.android.systemui.qs.composefragment.BrightnessLayout
+ import com.android.systemui.qs.composefragment.ConnectivityFolder
+ import com.android.systemui.qs.composefragment.ConnectivityFolderExpansion
++import com.android.systemui.qs.composefragment.OneUiSoundModeButton
++import com.android.systemui.qs.composefragment.OneUiTileControl
++import com.android.systemui.qs.composefragment.OneUiTogglesCard
+ import com.android.systemui.qs.composefragment.PenguinMediaCard
+ import com.android.systemui.qs.composefragment.VolumeLayout
+ import com.android.systemui.qs.composefragment.connectivityFolderEnabled
+@@ -120,30 +124,39 @@ internal fun penguinModuleHeight(rows: Int): Dp {
+     return row * rows + PenguinGridGap * (rows - 1).coerceAtLeast(0)
+ }
+ 
++internal val LocalPenguinGridFlavor = compositionLocalOf { PenguinGrid.Flavor.ControlCentre }
++
++internal val LocalPenguinGridLoose = compositionLocalOf { emptyList<TileSpec>() }
++
+ internal class PenguinGridModel(
+     val modules: Set<TileSpec>,
+     val tiles: List<TileSpec>,
+     val largeTiles: Set<TileSpec>,
+     val saved: List<List<PenguinGrid.Item>>?,
+     val pages: List<List<PenguinGrid.Item>>,
+-)
++) {
++    val loose: List<TileSpec> =
++        pages.flatten().map { it.spec }.toSet().let { placed -> tiles.filterNot { it in placed } }
++}
+ 
+ @Composable
+ internal fun rememberPenguinGridModel(viewModel: QuickSettingsContainerViewModel): PenguinGridModel {
+-    val folderEnabled = connectivityFolderEnabled()
++    val flavor = LocalPenguinGridFlavor.current
++    val oneUi = flavor == PenguinGrid.Flavor.OneUi
++    val folderEnabled = !oneUi && connectivityFolderEnabled()
+     val folderMemberSpecs = if (folderEnabled) connectivityFolderSpecs() else emptyList()
+     val largeTiles = viewModel.tileGridViewModel.largeTiles
+     val tileViewModels = viewModel.tileGridViewModel.tileViewModels
+     val modules =
+-        remember(folderEnabled) {
+-            PenguinGrid.MODULE_SPECS.filter { folderEnabled || it != FOLDER_SPEC }.toSet()
++        remember(folderEnabled, flavor) {
++            flavor.moduleSpecs.filter { folderEnabled || it != FOLDER_SPEC }.toSet()
+         }
+     val tiles =
+         remember(tileViewModels, folderMemberSpecs) {
+             tileViewModels.map { it.spec }.filterNot { it.spec in folderMemberSpecs }
+         }
+-    val raw = secureStringSetting(PenguinGrid.SETTING)
+-    return remember(raw, modules, tiles, largeTiles) {
++    val raw = secureStringSetting(flavor.setting)
++    return remember(raw, modules, tiles, largeTiles, flavor) {
+         val saved = PenguinGrid.parse(raw)
+         PenguinGridModel(
+             modules = modules,
+@@ -151,8 +164,9 @@ internal fun rememberPenguinGridModel(viewModel: QuickSettingsContainerViewModel
+             largeTiles = largeTiles,
+             saved = saved,
+             pages =
+-                saved?.let { PenguinGrid.resolve(it, modules, tiles, largeTiles) }
+-                    ?: PenguinGrid.defaults(modules, tiles, largeTiles),
++                saved?.let {
++                    PenguinGrid.resolve(it, modules, tiles, largeTiles, flavor = flavor)
++                } ?: PenguinGrid.defaults(modules, tiles, largeTiles, flavor),
+         )
+     }
+ }
+@@ -169,6 +183,16 @@ fun ContentScope.PenguinGridQuickSettings(
+     PenguinGridTheme { PenguinGridQuickSettingsContent(viewModel, modifier) }
+ }
+ 
++@Composable
++fun ContentScope.OneUiGridQuickSettings(
++    viewModel: QuickSettingsContainerViewModel,
++    modifier: Modifier = Modifier,
++) {
++    CompositionLocalProvider(LocalPenguinGridFlavor provides PenguinGrid.Flavor.OneUi) {
++        PenguinGridTheme { PenguinGridQuickSettingsContent(viewModel, modifier) }
++    }
++}
++
+ @Composable
+ private fun ContentScope.PenguinGridQuickSettingsContent(
+     viewModel: QuickSettingsContainerViewModel,
+@@ -176,6 +200,18 @@ private fun ContentScope.PenguinGridQuickSettingsContent(
+ ) {
+     val model = rememberPenguinGridModel(viewModel)
+     val pages = model.pages
++    CompositionLocalProvider(LocalPenguinGridLoose provides model.loose) {
++        PenguinGridPages(viewModel, model, modifier)
++    }
++}
++
++@Composable
++private fun ContentScope.PenguinGridPages(
++    viewModel: QuickSettingsContainerViewModel,
++    model: PenguinGridModel,
++    modifier: Modifier,
++) {
++    val pages = model.pages
+ 
+     val panelVisible = isAlwaysComposedContentVisible()
+     val host = LocalQsHostTransition.current ?: qsHostTransition()
+@@ -398,8 +434,30 @@ internal fun ContentScope.GridItemContent(
+     val height = penguinModuleHeight(item.h)
+     var bounds by remember { mutableStateOf<Rect?>(null) }
+     val open = { PenguinGridOrigin.bounds = bounds }
++    val oneUi = LocalPenguinGridFlavor.current == PenguinGrid.Flavor.OneUi
++    val loose = LocalPenguinGridLoose.current
+     Box(modifier.onGloballyPositioned { bounds = it.boundsInRoot() }) {
+         when (item.spec) {
++            PenguinGrid.ONEUI_TOGGLES_SPEC -> {
++                val tiles = viewModel.tileGridViewModel.tileViewModels
++                val shown =
++                    remember(tiles, loose) {
++                        val bySpec = tiles.associateBy { it.spec }
++                        loose.mapNotNull { bySpec[it] }
++                    }
++                OneUiTogglesCard(
++                    tiles = shown,
++                    modifier = Modifier.height(height),
++                    rows = item.h,
++                    toggleSize = OneUiGridToggleSize,
++                    interactive = !preview && interactable,
++                    onEdit = if (preview) ({ OneUiToggleEditing.active = true }) else null,
++                )
++            }
++            PenguinGrid.ONEUI_SOUND_SPEC ->
++                Box(Modifier.height(height).fillMaxWidth(), contentAlignment = Alignment.Center) {
++                    OneUiSoundModeButton(height)
++                }
+             FOLDER_SPEC ->
+                 if (item.h >= 4) {
+                     ConnectivityFolder(
+@@ -456,16 +514,35 @@ internal fun ContentScope.GridItemContent(
+                     capsule = true,
+                 )
+             else ->
+-                TileGrid(
+-                    viewModel = viewModel.tileGridViewModel,
+-                    includeSpecs = listOf(item.spec),
+-                    columnsOverride = item.w,
+-                    listening = listening,
+-                )
++                if (oneUi) {
++                    viewModel.tileGridViewModel.tileViewModels
++                        .firstOrNull { it.spec == item.spec }
++                        ?.let { tile ->
++                            OneUiTileControl(
++                                tile = tile,
++                                wide = item.w > 1,
++                                modifier = Modifier.height(height),
++                                interactive = !preview,
++                            )
++                        }
++                } else {
++                    TileGrid(
++                        viewModel = viewModel.tileGridViewModel,
++                        includeSpecs = listOf(item.spec),
++                        columnsOverride = item.w,
++                        listening = listening,
++                    )
++                }
+         }
+     }
+ }
+ 
++private val OneUiGridToggleSize = 52.dp
++
++object OneUiToggleEditing {
++    var active by mutableStateOf(false)
++}
++
+ @Composable
+ private fun NotPlaying(height: Dp) {
+     PanelElementPlaceholder(
+diff --git a/packages/SystemUI/compose/features/src/com/android/systemui/qs/ui/composable/PenguinGridEditor.kt b/packages/SystemUI/compose/features/src/com/android/systemui/qs/ui/composable/PenguinGridEditor.kt
+index 442ab02da45a..eb25fc8e5113 100644
+--- a/packages/SystemUI/compose/features/src/com/android/systemui/qs/ui/composable/PenguinGridEditor.kt
++++ b/packages/SystemUI/compose/features/src/com/android/systemui/qs/ui/composable/PenguinGridEditor.kt
+@@ -50,6 +50,8 @@ import androidx.compose.foundation.text.BasicTextField
+ import androidx.compose.material.icons.Icons
+ import androidx.compose.material.icons.automirrored.rounded.VolumeUp
+ import androidx.compose.material.icons.rounded.Add
++import androidx.compose.material.icons.rounded.Apps
++import androidx.compose.material.icons.rounded.Vibration
+ import androidx.compose.material.icons.rounded.BrightnessHigh
+ import androidx.compose.material.icons.rounded.MusicNote
+ import androidx.compose.material.icons.rounded.Wifi
+@@ -60,6 +62,7 @@ import androidx.compose.material3.Icon
+ import androidx.compose.material3.MaterialTheme
+ import androidx.compose.material3.Text
+ import androidx.compose.runtime.Composable
++import androidx.compose.runtime.CompositionLocalProvider
+ import androidx.compose.runtime.DisposableEffect
+ import androidx.compose.runtime.LaunchedEffect
+ import androidx.compose.runtime.getValue
+@@ -119,6 +122,21 @@ private class Drag(val item: Item, val fromPage: Int, val grab: Offset) {
+ 
+ @Composable
+ fun ContentScope.PenguinGridEditor(viewModel: QuickSettingsContainerViewModel, modifier: Modifier = Modifier) {
++    PenguinGridEditorHost(viewModel, modifier)
++}
++
++@Composable
++fun ContentScope.OneUiGridEditor(viewModel: QuickSettingsContainerViewModel, modifier: Modifier = Modifier) {
++    CompositionLocalProvider(LocalPenguinGridFlavor provides PenguinGrid.Flavor.OneUi) {
++        PenguinGridEditorHost(viewModel, modifier)
++    }
++}
++
++@Composable
++private fun ContentScope.PenguinGridEditorHost(
++    viewModel: QuickSettingsContainerViewModel,
++    modifier: Modifier,
++) {
+     val editViewModel = viewModel.editModeViewModel
+     val gridLayout by editViewModel.gridLayout.collectAsStateWithLifecycle()
+     LaunchedEffect(Unit) { closeExpansions() }
+@@ -137,9 +155,12 @@ private fun ContentScope.PenguinGridEditorContent(
+ ) {
+     val editViewModel = viewModel.editModeViewModel
+     val resolver = LocalContext.current.contentResolver
++    val flavor = LocalPenguinGridFlavor.current
++    val oneUi = flavor == PenguinGrid.Flavor.OneUi
+     val model = rememberPenguinGridModel(viewModel)
+     val latestModel by rememberUpdatedState(model)
+     val pages = model.pages
++    CompositionLocalProvider(LocalPenguinGridLoose provides model.loose) {
+     val mediaShown = viewModel.showMedia && viewModel.hasMediaCards
+     val editTiles by editViewModel.tiles.collectAsStateWithLifecycle(emptyList())
+     val tilesBySpec = remember(editTiles) { editTiles.associateBy { it.tileSpec } }
+@@ -167,7 +188,7 @@ private fun ContentScope.PenguinGridEditorContent(
+             }
+         }
+         val cleaned = merged.filterIndexed { index, page -> index == 0 || page.isNotEmpty() }
+-        Settings.Secure.putString(resolver, PenguinGrid.SETTING, PenguinGrid.serialize(cleaned))
++        Settings.Secure.putString(resolver, flavor.setting, PenguinGrid.serialize(cleaned))
+     }
+ 
+     var drag by remember { mutableStateOf<Drag?>(null) }
+@@ -198,7 +219,7 @@ private fun ContentScope.PenguinGridEditorContent(
+                 modifier =
+                     Modifier.clip(RoundedCornerShape(12.dp))
+                         .clickable {
+-                            Settings.Secure.putString(resolver, PenguinGrid.SETTING, null)
++                            Settings.Secure.putString(resolver, flavor.setting, null)
+                         }
+                         .padding(horizontal = 12.dp, vertical = 8.dp),
+             )
+@@ -356,7 +377,7 @@ private fun ContentScope.PenguinGridEditorContent(
+                             val next = pages.map { it.toMutableList() }
+                             next.getOrNull(index)?.remove(item)
+                             commit(next)
+-                            if (!PenguinGrid.isModule(item.spec)) {
++                            if (!PenguinGrid.isModule(item.spec) && !oneUi) {
+                                 editViewModel.removeTile(item.spec)
+                             }
+                         },
+@@ -431,9 +452,10 @@ private fun ContentScope.PenguinGridEditorContent(
+                 viewModel = viewModel,
+                 modules = model.modules,
+                 currentPage = pages.getOrNull(pagerState.currentPage).orEmpty(),
++                loose = if (oneUi) model.loose.toSet() else emptySet(),
+                 onAddModule = { spec ->
+                     val index = pagerState.currentPage.coerceIn(0, pages.lastIndex)
+-                    val (w, h) = PenguinGrid.sizes(spec).first()
++                    val (w, h) = PenguinGrid.sizes(spec, flavor).first()
+                     val next = pages.map { it.toMutableList() }
+                     next[index] += PenguinGrid.firstFree(next[index], spec, w, h)
+                     commit(next)
+@@ -445,16 +467,17 @@ private fun ContentScope.PenguinGridEditorContent(
+                     next[index] += PenguinGrid.firstFree(next[index], spec, 1, 1)
+                     Settings.Secure.putString(
+                         resolver,
+-                        PenguinGrid.SETTING,
++                        flavor.setting,
+                         PenguinGrid.serialize(next),
+                     )
+-                    editViewModel.addTile(spec)
++                    if (spec !in model.loose) editViewModel.addTile(spec)
+                     adding = false
+                 },
+                 onDismiss = { adding = false },
+             )
+         }
+     }
++    }
+ }
+ 
+ @Composable
+@@ -464,7 +487,10 @@ private fun ContentScope.EditItem(
+     mediaShown: Boolean,
+     tiles: Map<TileSpec, EditTileViewModel>,
+ ) {
+-    if (PenguinGrid.isModule(item.spec)) {
++    if (
++        PenguinGrid.isModule(item.spec) ||
++            LocalPenguinGridFlavor.current == PenguinGrid.Flavor.OneUi
++    ) {
+         GridItemContent(
+             viewModel = viewModel,
+             item = item,
+@@ -601,7 +627,7 @@ private fun EditPage(
+                     ) {
+                         onRemove(item)
+                     }
+-                    if (PenguinGrid.sizes(item.spec).size > 1) {
++                    if (PenguinGrid.sizes(item.spec, LocalPenguinGridFlavor.current).size > 1) {
+                         ResizeHandle(
+                             item = item,
+                             metrics = metrics,
+@@ -625,7 +651,7 @@ private fun ResizeHandle(
+     onResize: (TileSpec, Int, Int) -> Unit,
+     modifier: Modifier,
+ ) {
+-    val sizes = PenguinGrid.sizes(item.spec)
++    val sizes = PenguinGrid.sizes(item.spec, LocalPenguinGridFlavor.current)
+     val current by rememberUpdatedState(item)
+     val currentMetrics by rememberUpdatedState(metrics)
+     val currentOnPreview by rememberUpdatedState(onPreview)
+@@ -738,6 +764,7 @@ private fun AddControlSheet(
+     viewModel: QuickSettingsContainerViewModel,
+     modules: Set<TileSpec>,
+     currentPage: List<Item>,
++    loose: Set<TileSpec>,
+     onAddModule: (TileSpec) -> Unit,
+     onAddTile: (TileSpec) -> Unit,
+     onDismiss: () -> Unit,
+@@ -751,6 +778,8 @@ private fun AddControlSheet(
+             FOLDER_SPEC to stringResource(R.string.quick_settings_connectivity_folder_title),
+             PenguinGrid.BRIGHTNESS_SPEC to stringResource(R.string.penguin_cc_brightness),
+             PenguinGrid.VOLUME_SPEC to stringResource(R.string.penguin_cc_volume),
++            PenguinGrid.ONEUI_TOGGLES_SPEC to stringResource(R.string.oneui_toggles),
++            PenguinGrid.ONEUI_SOUND_SPEC to stringResource(R.string.oneui_sound_mode),
+         )
+     val moduleIcons =
+         mapOf(
+@@ -758,14 +787,16 @@ private fun AddControlSheet(
+             FOLDER_SPEC to Icons.Rounded.Wifi,
+             PenguinGrid.BRIGHTNESS_SPEC to Icons.Rounded.BrightnessHigh,
+             PenguinGrid.VOLUME_SPEC to Icons.AutoMirrored.Rounded.VolumeUp,
++            PenguinGrid.ONEUI_TOGGLES_SPEC to Icons.Rounded.Apps,
++            PenguinGrid.ONEUI_SOUND_SPEC to Icons.Rounded.Vibration,
+         )
+     val onPage = currentPage.map { it.spec }.toSet()
+     val availableModules =
+-        PenguinGrid.MODULE_SPECS.filter { it in modules && it !in onPage }
++        LocalPenguinGridFlavor.current.moduleSpecs.filter { it in modules && it !in onPage }
+             .filter { moduleNames[it].orEmpty().contains(query, ignoreCase = true) }
+     val availableTiles =
+         tiles
+-            .filter { !it.isCurrent }
++            .filter { !it.isCurrent || it.tileSpec in loose }
+             .filter { it.label.text.contains(query, ignoreCase = true) }
+             .sortedBy { it.label.text.lowercase() }
+ 
+diff --git a/packages/SystemUI/compose/features/src/com/android/systemui/qs/ui/composable/QuickSettingsShadeOverlay.kt b/packages/SystemUI/compose/features/src/com/android/systemui/qs/ui/composable/QuickSettingsShadeOverlay.kt
+index b4d672b1b1bc..58847cb02096 100644
+--- a/packages/SystemUI/compose/features/src/com/android/systemui/qs/ui/composable/QuickSettingsShadeOverlay.kt
++++ b/packages/SystemUI/compose/features/src/com/android/systemui/qs/ui/composable/QuickSettingsShadeOverlay.kt
+@@ -44,6 +44,7 @@ import androidx.compose.material3.Icon
+ import androidx.compose.material3.IconButton
+ import androidx.compose.material3.IconButtonDefaults
+ import androidx.compose.material3.MaterialTheme
++import androidx.compose.runtime.LaunchedEffect
+ import androidx.compose.runtime.Composable
+ import androidx.compose.runtime.ReadOnlyComposable
+ import androidx.compose.runtime.derivedStateOf
+@@ -272,6 +273,7 @@ private fun ContentScope.QuickSettingsContainer(
+     modifier: Modifier = Modifier,
+ ) {
+     val isEditing by containerViewModel.editModeViewModel.isEditing.collectAsStateWithLifecycle()
++    LaunchedEffect(isEditing) { if (!isEditing) OneUiToggleEditing.active = false }
+     val tileDetails =
+         if (QsDetailedView.isEnabled) containerViewModel.detailsViewModel.activeTileDetails
+         else null
+@@ -311,6 +313,19 @@ private fun ContentScope.QuickSettingsContainer(
+     ) { state ->
+         when (state) {
+             ShadeBodyState.Editing -> {
++                if (
++                    containerViewModel.panelStyle == QsPanelStyle.OneUi &&
++                        !OneUiToggleEditing.active
++                ) {
++                    OneUiGridEditor(
++                        viewModel = containerViewModel,
++                        modifier =
++                            modifier
++                                .fillMaxWidth()
++                                .padding(vertical = QuickSettingsShade.Dimensions.VerticalPadding),
++                    )
++                    return@AnimatedContent
++                }
+                 if (containerViewModel.panelStyle == QsPanelStyle.Penguin) {
+                     PenguinGridEditor(
+                         viewModel = containerViewModel,
+@@ -410,6 +425,11 @@ private fun ContentScope.QuickSettingsLayout(
+                 PenguinGridQuickSettings(viewModel = qsContainerViewModel)
+                 VerticalSeparator(QuickSettingsShade.Dimensions.VerticalPadding)
+             }
++        } else if (qsContainerViewModel.panelStyle == QsPanelStyle.OneUi) {
++            Column(modifier = Modifier.fillMaxWidth().verticalScroll(rememberScrollState())) {
++                OneUiGridQuickSettings(viewModel = qsContainerViewModel)
++                VerticalSeparator(QuickSettingsShade.Dimensions.VerticalPadding)
++            }
+         } else if (qsContainerViewModel.panelStyle != QsPanelStyle.Default) {
+             Column(modifier = Modifier.fillMaxWidth().verticalScroll(rememberScrollState())) {
+                 QuickSettingsContent(
+diff --git a/packages/SystemUI/res/values/custom_strings.xml b/packages/SystemUI/res/values/custom_strings.xml
+index 660400dfa853..b33e5e4f4f01 100644
+--- a/packages/SystemUI/res/values/custom_strings.xml
++++ b/packages/SystemUI/res/values/custom_strings.xml
+@@ -236,6 +236,11 @@
+     <string name="harmony_not_playing">Not playing</string>
+     <!-- One UI Quick Settings: the media pill when nothing is playing. -->
+     <string name="oneui_play_music">Play music</string>
++    <!-- One UI Quick Settings: edits the tiles in the card of round toggles. -->
++    <string name="oneui_edit">Edit</string>
++    <!-- One UI Quick Settings: Add a control names for its cards. -->
++    <string name="oneui_toggles">Toggles</string>
++    <string name="oneui_sound_mode">Sound mode</string>
+     <string name="harmony_devices">Devices</string>
+     <string name="harmony_cast_hint">Tap to cast your screen to a nearby device</string>
+     <string name="harmony_connected">Connected</string>
+diff --git a/packages/SystemUI/src/com/android/systemui/qs/composefragment/OneUiQuickSettings.kt b/packages/SystemUI/src/com/android/systemui/qs/composefragment/OneUiQuickSettings.kt
+index 58af2a3b60f4..1ab6908c3184 100644
+--- a/packages/SystemUI/src/com/android/systemui/qs/composefragment/OneUiQuickSettings.kt
++++ b/packages/SystemUI/src/com/android/systemui/qs/composefragment/OneUiQuickSettings.kt
+@@ -32,6 +32,7 @@ import androidx.compose.foundation.layout.Arrangement.spacedBy
+ import androidx.compose.foundation.layout.Box
+ import androidx.compose.foundation.layout.Column
+ import androidx.compose.foundation.layout.Row
++import androidx.compose.foundation.layout.aspectRatio
+ import androidx.compose.foundation.layout.fillMaxHeight
+ import androidx.compose.foundation.layout.fillMaxSize
+ import androidx.compose.foundation.layout.fillMaxWidth
+@@ -83,6 +84,7 @@ private val OneUiPillCorner = 40.dp
+ private val OneUiCardCorner = 36.dp
+ private val OneUiToggleSize = 58.dp
+ private val OneUiSliderHeight = 72.dp
++private val OneUiDiscInPill = 52.dp
+ private const val OneUiToggleColumns = 4
+ private const val OneUiToggleRows = 2
+ 
+@@ -125,7 +127,9 @@ fun OneUiQuickSettingsPanel(
+     Column(modifier = modifier.fillMaxWidth(), verticalArrangement = spacedBy(OneUiGap)) {
+         if (wifi != null || bluetooth != null) {
+             Row(horizontalArrangement = spacedBy(OneUiGap)) {
+-                listOfNotNull(wifi, bluetooth).forEach { OneUiPill(it, Modifier.weight(1f)) }
++                listOfNotNull(wifi, bluetooth).forEach {
++                    OneUiPill(it, Modifier.weight(1f).height(OneUiPillHeight))
++                }
+                 if (wifi == null || bluetooth == null) Box(Modifier.weight(1f))
+             }
+         }
+@@ -143,7 +147,7 @@ fun OneUiQuickSettingsPanel(
+         media?.invoke() ?: OneUiIdleMedia()
+         pills.chunked(2).forEach { row ->
+             Row(horizontalArrangement = spacedBy(OneUiGap)) {
+-                row.forEach { OneUiPill(it, Modifier.weight(1f)) }
++                row.forEach { OneUiPill(it, Modifier.weight(1f).height(OneUiPillHeight)) }
+                 if (row.size == 1) Box(Modifier.weight(1f))
+             }
+         }
+@@ -157,7 +161,6 @@ private fun OneUiPill(tile: TileViewModel, modifier: Modifier = Modifier) {
+     Row(
+         modifier =
+             modifier
+-                .height(OneUiPillHeight)
+                 .oneUiCard(OneUiPillCorner)
+                 .combinedClickable(
+                     onClick = { tile.primaryAction(uiState) },
+@@ -167,7 +170,7 @@ private fun OneUiPill(tile: TileViewModel, modifier: Modifier = Modifier) {
+         horizontalArrangement = spacedBy(12.dp),
+         verticalAlignment = Alignment.CenterVertically,
+     ) {
+-        OneUiDisc(icon, active, OneUiPillHeight - 24.dp)
++        OneUiDisc(icon, active, OneUiDiscInPill)
+         Column(Modifier.weight(1f)) {
+             Text(
+                 text = uiState.label,
+@@ -209,27 +212,40 @@ private fun OneUiDisc(icon: Icon, active: Boolean, size: Dp) {
+ }
+ 
+ @Composable
+-private fun OneUiTogglesCard(tiles: List<TileViewModel>) {
+-    val perPage = OneUiToggleColumns * OneUiToggleRows
+-    val pages = remember(tiles) { tiles.chunked(perPage) }
++fun OneUiTogglesCard(
++    tiles: List<TileViewModel>,
++    modifier: Modifier = Modifier,
++    rows: Int = OneUiToggleRows,
++    toggleSize: Dp = OneUiToggleSize,
++    interactive: Boolean = true,
++    onEdit: (() -> Unit)? = null,
++) {
++    ListenTo(tiles)
++    val perPage = OneUiToggleColumns * rows
++    val pages = remember(tiles, perPage) { tiles.chunked(perPage).ifEmpty { listOf(emptyList()) } }
+     val pagerState = rememberPagerState(pageCount = { pages.size })
++    Box(modifier = modifier.fillMaxWidth()) {
+     Column(
+-        modifier = Modifier.fillMaxWidth().oneUiCard().padding(top = 20.dp, bottom = 10.dp),
++        modifier = Modifier.fillMaxWidth().oneUiCard().padding(top = 14.dp, bottom = 8.dp),
+         horizontalAlignment = Alignment.CenterHorizontally,
+-        verticalArrangement = spacedBy(10.dp),
++        verticalArrangement = spacedBy(8.dp),
+     ) {
+-        HorizontalPager(state = pagerState, modifier = Modifier.fillMaxWidth()) { page ->
++        HorizontalPager(
++            state = pagerState,
++            userScrollEnabled = interactive,
++            modifier = Modifier.fillMaxWidth(),
++        ) { page ->
+             Column(
+                 modifier = Modifier.fillMaxWidth().padding(horizontal = 14.dp),
+-                verticalArrangement = spacedBy(18.dp),
++                verticalArrangement = spacedBy(12.dp),
+             ) {
+-                pages[page].chunked(OneUiToggleColumns).let { rows ->
+-                    rows + List(OneUiToggleRows - rows.size) { emptyList() }
++                pages[page].chunked(OneUiToggleColumns).let { chunks ->
++                    chunks + List(rows - chunks.size) { emptyList() }
+                 }.forEach { row ->
+-                    Row(modifier = Modifier.fillMaxWidth().height(OneUiToggleSize)) {
++                    Row(modifier = Modifier.fillMaxWidth().height(toggleSize)) {
+                         row.forEach { tile ->
+                             Box(Modifier.weight(1f), contentAlignment = Alignment.Center) {
+-                                OneUiToggle(tile)
++                                OneUiToggle(tile, toggleSize, interactive)
+                             }
+                         }
+                         repeat(OneUiToggleColumns - row.size) { Box(Modifier.weight(1f)) }
+@@ -253,25 +269,95 @@ private fun OneUiTogglesCard(tiles: List<TileViewModel>) {
+             }
+         }
+     }
++    onEdit?.let { edit ->
++        Text(
++            text = stringResource(R.string.oneui_edit),
++            color = Color.White,
++            style = MaterialTheme.typography.titleSmall,
++            modifier =
++                Modifier.align(Alignment.Center)
++                    .clip(CircleShape)
++                    .background(Color.Black.copy(alpha = 0.45f))
++                    .clickable(onClick = edit)
++                    .padding(horizontal = 20.dp, vertical = 10.dp),
++        )
++    }
++    }
+ }
+ 
+ @Composable
+-private fun OneUiToggle(tile: TileViewModel) {
++private fun OneUiToggle(tile: TileViewModel, size: Dp, interactive: Boolean) {
+     val (uiState, icon) = rememberTileState(tile)
+     Box(
+         modifier =
+-            Modifier.size(OneUiToggleSize)
++            Modifier.size(size)
+                 .clip(CircleShape)
+-                .combinedClickable(
+-                    onClick = { tile.primaryAction(uiState) },
+-                    onLongClick = { tile.settingsClick(null) },
++                .then(
++                    if (interactive) {
++                        Modifier.combinedClickable(
++                            onClick = { tile.primaryAction(uiState) },
++                            onLongClick = { tile.settingsClick(null) },
++                        )
++                    } else {
++                        Modifier
++                    }
+                 ),
+         contentAlignment = Alignment.Center,
+     ) {
+-        OneUiDisc(icon, uiState.visualState == Tile.STATE_ACTIVE, OneUiToggleSize)
++        OneUiDisc(icon, uiState.visualState == Tile.STATE_ACTIVE, size)
+     }
+ }
+ 
++@Composable
++fun OneUiTileControl(
++    tile: TileViewModel,
++    wide: Boolean,
++    modifier: Modifier = Modifier,
++    interactive: Boolean = true,
++) {
++    ListenTo(listOf(tile))
++    if (wide) {
++        Box(modifier.fillMaxSize().then(if (interactive) Modifier else Modifier.gesturesOff())) {
++            OneUiPill(tile, Modifier.fillMaxSize())
++        }
++    } else {
++        Box(modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
++            val (uiState, icon) = rememberTileState(tile)
++            Box(
++                Modifier.fillMaxHeight()
++                    .aspectRatio(1f)
++                    .clip(CircleShape)
++                    .then(
++                        if (interactive) {
++                            Modifier.combinedClickable(
++                                onClick = { tile.primaryAction(uiState) },
++                                onLongClick = { tile.settingsClick(null) },
++                            )
++                        } else {
++                            Modifier
++                        }
++                    ),
++                contentAlignment = Alignment.Center,
++            ) {
++                OneUiDisc(icon, uiState.visualState == Tile.STATE_ACTIVE, OneUiDiscCell)
++            }
++        }
++    }
++}
++
++private fun Modifier.gesturesOff(): Modifier =
++    pointerInput(Unit) {
++        awaitPointerEventScope {
++            while (true) {
++                awaitPointerEvent(androidx.compose.ui.input.pointer.PointerEventPass.Initial)
++                    .changes
++                    .forEach { it.consume() }
++            }
++        }
++    }
++
++private val OneUiDiscCell = 72.dp
++
+ @Composable
+ private fun OneUiRoundControl(tile: TileViewModel, size: Dp) {
+     val (uiState, icon) = rememberTileState(tile)
+@@ -368,7 +454,7 @@ private fun OneUiMediaVolumeSlider(modifier: Modifier = Modifier) {
+ }
+ 
+ @Composable
+-private fun OneUiSoundModeButton(size: Dp) {
++fun OneUiSoundModeButton(size: Dp) {
+     val (audioManager, audio) = rememberAudioState()
+     val (glyph, active) =
+         when (audio.ringerMode) {
+diff --git a/packages/SystemUI/src/com/android/systemui/qs/panels/ui/compose/PenguinGrid.kt b/packages/SystemUI/src/com/android/systemui/qs/panels/ui/compose/PenguinGrid.kt
+index 1c43d7fc19ed..bfc36089cd97 100644
+--- a/packages/SystemUI/src/com/android/systemui/qs/panels/ui/compose/PenguinGrid.kt
++++ b/packages/SystemUI/src/com/android/systemui/qs/panels/ui/compose/PenguinGrid.kt
+@@ -31,9 +31,29 @@ object PenguinGrid {
+     val BRIGHTNESS_SPEC = TileSpec.create("penguin_brightness")
+     val VOLUME_SPEC = TileSpec.create("penguin_volume")
+ 
++    val ONEUI_TOGGLES_SPEC = TileSpec.create("penguin_oneui_toggles")
++
++    val ONEUI_SOUND_SPEC = TileSpec.create("penguin_oneui_sound")
++
+     val MODULE_SPECS = listOf(FOLDER_SPEC, MEDIA_SPEC, BRIGHTNESS_SPEC, VOLUME_SPEC)
+ 
+-    fun isModule(spec: TileSpec) = spec in MODULE_SPECS
++    private val ONEUI_MODULE_SPECS =
++        listOf(ONEUI_TOGGLES_SPEC, BRIGHTNESS_SPEC, VOLUME_SPEC, ONEUI_SOUND_SPEC, MEDIA_SPEC)
++
++    enum class Flavor(val setting: String, val maxRows: Int) {
++        ControlCentre(SETTING, MAX_ROWS),
++
++        OneUi("qs_oneui_grid", 14);
++
++        val moduleSpecs: List<TileSpec>
++            get() = if (this == OneUi) ONEUI_MODULE_SPECS else MODULE_SPECS
++
++        val placesEveryTile: Boolean
++            get() = this == ControlCentre
++    }
++
++    fun isModule(spec: TileSpec) =
++        spec in MODULE_SPECS || spec == ONEUI_TOGGLES_SPEC || spec == ONEUI_SOUND_SPEC
+ 
+     data class Item(val spec: TileSpec, val x: Int, val y: Int, val w: Int, val h: Int) {
+         val right: Int
+@@ -48,7 +68,20 @@ object PenguinGrid {
+         fun contains(cellX: Int, cellY: Int) = cellX in x until right && cellY in y until bottom
+     }
+ 
+-    fun sizes(spec: TileSpec): List<Pair<Int, Int>> =
++    fun sizes(spec: TileSpec, flavor: Flavor = Flavor.ControlCentre): List<Pair<Int, Int>> =
++        if (flavor == Flavor.OneUi) oneUiSizes(spec) else controlCentreSizes(spec)
++
++    private fun oneUiSizes(spec: TileSpec): List<Pair<Int, Int>> =
++        when (spec) {
++            ONEUI_TOGGLES_SPEC -> listOf(4 to 2, 4 to 3)
++            BRIGHTNESS_SPEC,
++            VOLUME_SPEC -> listOf(3 to 1, 4 to 1, 2 to 1)
++            ONEUI_SOUND_SPEC -> listOf(1 to 1)
++            MEDIA_SPEC -> listOf(4 to 2, 2 to 2, 4 to 4)
++            else -> listOf(1 to 1, 2 to 1)
++        }
++
++    private fun controlCentreSizes(spec: TileSpec): List<Pair<Int, Int>> =
+         when (spec) {
+             MEDIA_SPEC -> listOf(2 to 2, 4 to 2, 4 to 4, 4 to 6)
+             FOLDER_SPEC -> listOf(2 to 2, 4 to 4)
+@@ -57,8 +90,14 @@ object PenguinGrid {
+             else -> listOf(1 to 1, 2 to 1)
+         }
+ 
+-    fun defaultSize(spec: TileSpec, largeTile: Boolean): Pair<Int, Int> =
+-        if (isModule(spec)) sizes(spec).first() else if (largeTile) 2 to 1 else 1 to 1
++    fun defaultSize(
++        spec: TileSpec,
++        largeTile: Boolean,
++        flavor: Flavor = Flavor.ControlCentre,
++    ): Pair<Int, Int> =
++        if (isModule(spec)) sizes(spec, flavor).first()
++        else if (largeTile) 2 to 1
++        else 1 to 1
+ 
+     fun rows(page: List<Item>) = page.maxOfOrNull { it.bottom } ?: 0
+ 
+@@ -71,6 +110,7 @@ object PenguinGrid {
+         tiles: List<TileSpec>,
+         largeTiles: Set<TileSpec>,
+         preferredPage: Map<TileSpec, Int> = emptyMap(),
++        flavor: Flavor = Flavor.ControlCentre,
+     ): List<List<Item>> {
+         val present = tiles.toSet()
+         val seen = mutableSetOf<TileSpec>()
+@@ -86,10 +126,10 @@ object PenguinGrid {
+                         if (!module && (item.spec !in present || item.spec in seen)) continue
+                         val (w, h) =
+                             if (module) {
+-                                if (item.w to item.h in sizes(item.spec)) item.w to item.h
+-                                else sizes(item.spec).first()
++                                if (item.w to item.h in sizes(item.spec, flavor)) item.w to item.h
++                                else sizes(item.spec, flavor).first()
+                             } else {
+-                                defaultSize(item.spec, item.spec in largeTiles)
++                                defaultSize(item.spec, item.spec in largeTiles, flavor)
+                             }
+                         val fitted =
+                             item.copy(
+@@ -108,13 +148,15 @@ object PenguinGrid {
+                 .toMutableList()
+         if (out.isEmpty()) out.add(mutableListOf())
+         for (spec in tiles) {
++            if (!flavor.placesEveryTile) break
+             if (spec in seen) continue
+             val index = preferredPage[spec]?.takeIf { it in out.indices } ?: 0
+             val (w, h) = defaultSize(spec, spec in largeTiles)
+             out[index].add(firstFree(out[index], spec, w, h))
+         }
+         return paginate(
+-            out.filterIndexed { index, page -> index == 0 || page.isNotEmpty() }.map(::compact)
++            out.filterIndexed { index, page -> index == 0 || page.isNotEmpty() }.map(::compact),
++            flavor.maxRows,
+         )
+     }
+ 
+@@ -132,22 +174,22 @@ object PenguinGrid {
+         return out
+     }
+ 
+-    fun paginate(pages: List<List<Item>>): List<List<Item>> {
++    fun paginate(pages: List<List<Item>>, maxRows: Int = MAX_ROWS): List<List<Item>> {
+         val out = mutableListOf<List<Item>>()
+         var carried = emptyList<Item>()
+         for (page in pages) {
+-            carried = spill(page, out)
++            carried = spill(page, out, maxRows)
+             while (carried.isNotEmpty()) {
+                 val next = mutableListOf<Item>()
+                 for (item in carried) next.add(firstFree(next, item.spec, item.w, item.h))
+-                carried = spill(next, out)
++                carried = spill(next, out, maxRows)
+             }
+         }
+         return out
+     }
+ 
+-    private fun spill(page: List<Item>, out: MutableList<List<Item>>): List<Item> {
+-        val (fits, over) = page.partition { it.bottom <= MAX_ROWS }
++    private fun spill(page: List<Item>, out: MutableList<List<Item>>, maxRows: Int): List<Item> {
++        val (fits, over) = page.partition { it.bottom <= maxRows }
+         out.add(fits)
+         return over.sortedWith(compareBy({ it.y }, { it.x }))
+     }
+@@ -156,7 +198,9 @@ object PenguinGrid {
+         modules: Set<TileSpec>,
+         tiles: List<TileSpec>,
+         largeTiles: Set<TileSpec>,
++        flavor: Flavor = Flavor.ControlCentre,
+     ): List<List<Item>> {
++        if (flavor == Flavor.OneUi) return oneUiDefaults(modules, tiles, largeTiles)
+         val first =
+             listOf(
+                     Item(FOLDER_SPEC, 0, 0, 2, 2),
+@@ -174,6 +218,37 @@ object PenguinGrid {
+         return resolve(pages, modules, tiles, largeTiles)
+     }
+ 
++    private fun oneUiDefaults(
++        modules: Set<TileSpec>,
++        tiles: List<TileSpec>,
++        largeTiles: Set<TileSpec>,
++    ): List<List<Item>> {
++        val present = tiles.toSet()
++        fun tile(vararg specs: String) =
++            specs.map { TileSpec.create(it) }.firstOrNull { it in present }
++        val wifi = tile("wifi", "internet")
++        val bluetooth = tile("bt")
++        val dark = tile("dark")
++        val page =
++            listOfNotNull(
++                    wifi?.let { Item(it, 0, 0, 2, 1) },
++                    bluetooth?.let { Item(it, 2, 0, 2, 1) },
++                    Item(ONEUI_TOGGLES_SPEC, 0, 1, 4, 2),
++                    Item(BRIGHTNESS_SPEC, 0, 3, 3, 1),
++                    dark?.let { Item(it, 3, 3, 1, 1) },
++                    Item(VOLUME_SPEC, 0, 4, 3, 1),
++                    Item(ONEUI_SOUND_SPEC, 3, 4, 1, 1),
++                    Item(MEDIA_SPEC, 0, 5, 4, 2),
++                )
++                .filter { it.spec in modules || !isModule(it.spec) }
++                .toMutableList()
++        val placed = page.map { it.spec }.toSet()
++        for (spec in tiles) {
++            if (spec in largeTiles && spec !in placed) page += firstFree(page, spec, 2, 1)
++        }
++        return resolve(listOf(page), modules, tiles, largeTiles, flavor = Flavor.OneUi)
++    }
++
+     fun firstFree(
+         placed: List<Item>,
+         spec: TileSpec,
+-- 
+2.43.0
+

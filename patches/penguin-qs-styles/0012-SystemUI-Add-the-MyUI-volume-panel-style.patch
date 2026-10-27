@@ -1,0 +1,906 @@
+From 0c34617ca25e3a33aad4124816833152bc37dfc2 Mon Sep 17 00:00:00 2001
+From: redducc <sushmit718@gmail.com>
+Date: Sat, 26 Sep 2026 19:33:23 +0000
+Subject: [PATCH] SystemUI: Add the MyUI volume panel style
+
+A narrow glass column by the volume keys that expands into a centred Sound & vibration card of thin sliders, in light and dark.
+---
+ .../drawable/volume_panel_myui_background.xml |  23 ++
+ .../volume_panel_myui_captions_background.xml |  34 +++
+ .../volume_panel_myui_done_background.xml     |  25 ++
+ .../volume_panel_myui_sliders_spacer.xml      |  24 ++
+ .../res/layout/volume_dialog_myui.xml         | 245 ++++++++++++++++++
+ packages/SystemUI/res/values-night/colors.xml |   9 +
+ packages/SystemUI/res/values/aospa_dimens.xml |  14 +
+ packages/SystemUI/res/values/colors.xml       |   9 +
+ .../SystemUI/res/values/custom_strings.xml    |   4 +
+ .../systemui/volume/VolumePanelStyle.kt       |   7 +-
+ .../systemui/volume/dialog/VolumeDialog.kt    |  12 +-
+ .../VolumeDialogCaptionsButtonViewBinder.kt   |   6 +
+ .../VolumeDialogExpandButtonViewBinder.kt     |  43 +++
+ .../ui/binder/VolumeDialogRingerViewBinder.kt |   3 +-
+ .../VolumeDialogSettingsButtonInteractor.kt   |   3 +-
+ .../VolumeDialogSettingsButtonViewBinder.kt   |   6 +-
+ .../VolumeDialogSlidersInteractor.kt          |  11 +-
+ .../ui/VolumeDialogSliderViewBinder.kt        |  31 ++-
+ .../ui/VolumeDialogSlidersViewBinder.kt       |  48 +++-
+ .../ui/binder/VolumeDialogViewBinder.kt       |   3 +-
+ 20 files changed, 536 insertions(+), 24 deletions(-)
+ create mode 100644 packages/SystemUI/res/drawable/volume_panel_myui_background.xml
+ create mode 100644 packages/SystemUI/res/drawable/volume_panel_myui_captions_background.xml
+ create mode 100644 packages/SystemUI/res/drawable/volume_panel_myui_done_background.xml
+ create mode 100644 packages/SystemUI/res/drawable/volume_panel_myui_sliders_spacer.xml
+ create mode 100644 packages/SystemUI/res/layout/volume_dialog_myui.xml
+
+diff --git a/packages/SystemUI/res/drawable/volume_panel_myui_background.xml b/packages/SystemUI/res/drawable/volume_panel_myui_background.xml
+new file mode 100644
+index 000000000000..1a259ad8f2d6
+--- /dev/null
++++ b/packages/SystemUI/res/drawable/volume_panel_myui_background.xml
+@@ -0,0 +1,23 @@
++<?xml version="1.0" encoding="utf-8"?>
++<!--
++     Copyright (C) 2026 The PenguinOS Project
++
++     Licensed under the Apache License, Version 2.0 (the "License");
++     you may not use this file except in compliance with the License.
++     You may obtain a copy of the License at
++
++          http://www.apache.org/licenses/LICENSE-2.0
++
++     Unless required by applicable law or agreed to in writing, software
++     distributed under the License is distributed on an "AS IS" BASIS,
++     WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
++     See the License for the specific language governing permissions and
++     limitations under the License.
++-->
++<!-- The MyUI volume card. Starts on the no-blur color; the sliders view binder swaps it for the blur
++     tint and puts a blur layer underneath when blur is available. -->
++<shape xmlns:android="http://schemas.android.com/apk/res/android"
++    android:shape="rectangle">
++    <corners android:radius="@dimen/volume_panel_myui_background_corner_radius" />
++    <solid android:color="@color/volume_panel_myui_background_fallback" />
++</shape>
+diff --git a/packages/SystemUI/res/drawable/volume_panel_myui_captions_background.xml b/packages/SystemUI/res/drawable/volume_panel_myui_captions_background.xml
+new file mode 100644
+index 000000000000..e953a9f7228d
+--- /dev/null
++++ b/packages/SystemUI/res/drawable/volume_panel_myui_captions_background.xml
+@@ -0,0 +1,34 @@
++<?xml version="1.0" encoding="utf-8"?>
++<!--
++     Copyright (C) 2026 The PenguinOS Project
++
++     Licensed under the Apache License, Version 2.0 (the "License");
++     you may not use this file except in compliance with the License.
++     You may obtain a copy of the License at
++
++          http://www.apache.org/licenses/LICENSE-2.0
++
++     Unless required by applicable law or agreed to in writing, software
++     distributed under the License is distributed on an "AS IS" BASIS,
++     WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
++     See the License for the specific language governing permissions and
++     limitations under the License.
++-->
++<!-- The captions button under the MyUI column, rounded like the column: glass when off, the slider
++     accent when on. Has to stay a transition drawable, VolumeDialogCaptionsButtonViewBinder
++     cross-fades it. -->
++<transition xmlns:android="http://schemas.android.com/apk/res/android"
++            android:paddingMode="stack">
++    <item>
++        <shape android:shape="rectangle">
++            <corners android:radius="@dimen/volume_panel_myui_background_corner_radius" />
++            <solid android:color="@color/volume_panel_myui_background_fallback" />
++        </shape>
++    </item>
++    <item>
++        <shape android:shape="rectangle">
++            <corners android:radius="@dimen/volume_panel_myui_background_corner_radius" />
++            <solid android:color="@color/volume_panel_myui_track_active" />
++        </shape>
++    </item>
++</transition>
+diff --git a/packages/SystemUI/res/drawable/volume_panel_myui_done_background.xml b/packages/SystemUI/res/drawable/volume_panel_myui_done_background.xml
+new file mode 100644
+index 000000000000..d4909f12a83d
+--- /dev/null
++++ b/packages/SystemUI/res/drawable/volume_panel_myui_done_background.xml
+@@ -0,0 +1,25 @@
++<?xml version="1.0" encoding="utf-8"?>
++<!--
++     Copyright (C) 2026 The PenguinOS Project
++
++     Licensed under the Apache License, Version 2.0 (the "License");
++     you may not use this file except in compliance with the License.
++     You may obtain a copy of the License at
++
++          http://www.apache.org/licenses/LICENSE-2.0
++
++     Unless required by applicable law or agreed to in writing, software
++     distributed under the License is distributed on an "AS IS" BASIS,
++     WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
++     See the License for the specific language governing permissions and
++     limitations under the License.
++-->
++<ripple xmlns:android="http://schemas.android.com/apk/res/android"
++    android:color="?android:attr/colorControlHighlight">
++    <item>
++        <shape android:shape="rectangle">
++            <corners android:radius="18dp" />
++            <solid android:color="@color/volume_panel_myui_button" />
++        </shape>
++    </item>
++</ripple>
+diff --git a/packages/SystemUI/res/drawable/volume_panel_myui_sliders_spacer.xml b/packages/SystemUI/res/drawable/volume_panel_myui_sliders_spacer.xml
+new file mode 100644
+index 000000000000..f92b1273cbec
+--- /dev/null
++++ b/packages/SystemUI/res/drawable/volume_panel_myui_sliders_spacer.xml
+@@ -0,0 +1,24 @@
++<?xml version="1.0" encoding="utf-8"?>
++<!--
++     Copyright (C) 2026 The PenguinOS Project
++
++     Licensed under the Apache License, Version 2.0 (the "License");
++     you may not use this file except in compliance with the License.
++     You may obtain a copy of the License at
++
++          http://www.apache.org/licenses/LICENSE-2.0
++
++     Unless required by applicable law or agreed to in writing, software
++     distributed under the License is distributed on an "AS IS" BASIS,
++     WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
++     See the License for the specific language governing permissions and
++     limitations under the License.
++-->
++<!-- Gap between the sliders of the MyUI volume panel style. -->
++<shape xmlns:android="http://schemas.android.com/apk/res/android"
++    android:shape="rectangle">
++    <size
++        android:width="@dimen/volume_panel_myui_slider_spacing"
++        android:height="@dimen/volume_panel_myui_slider_spacing" />
++    <solid android:color="@color/transparent" />
++</shape>
+diff --git a/packages/SystemUI/res/layout/volume_dialog_myui.xml b/packages/SystemUI/res/layout/volume_dialog_myui.xml
+new file mode 100644
+index 000000000000..b69040c9684d
+--- /dev/null
++++ b/packages/SystemUI/res/layout/volume_dialog_myui.xml
+@@ -0,0 +1,245 @@
++<?xml version="1.0" encoding="utf-8"?>
++<!--
++     Copyright (C) 2026 The PenguinOS Project
++
++     Licensed under the Apache License, Version 2.0 (the "License");
++     you may not use this file except in compliance with the License.
++     You may obtain a copy of the License at
++
++          http://www.apache.org/licenses/LICENSE-2.0
++
++     Unless required by applicable law or agreed to in writing, software
++     distributed under the License is distributed on an "AS IS" BASIS,
++     WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
++     See the License for the specific language governing permissions and
++     limitations under the License.
++-->
++<!--
++     Root view of the MyUI volume panel style. Collapsed it is a narrow glass column by the volume
++     keys: the sound icon, one thin slider with its stream icon under it, and the dots that expand
++     it, with the captions button as a circle of its own below. Expanded it is a centred
++     "Sound & vibration" card of thin sliders with Done and Sound settings along the bottom.
++
++     The ids are the ones the volume dialog view binders look for. There is no ringer drawer here,
++     and VolumeDialogRingerViewBinder skips the card styles because of that.
++-->
++<LinearLayout
++    xmlns:android="http://schemas.android.com/apk/res/android"
++    xmlns:app="http://schemas.android.com/apk/res-auto"
++    android:id="@+id/volume_dialog"
++    android:layout_width="wrap_content"
++    android:layout_height="wrap_content"
++    android:alpha="0"
++    android:clipChildren="false"
++    android:gravity="center_horizontal"
++    android:orientation="vertical"
++    android:paddingStart="@dimen/volume_panel_myui_screen_margin"
++    android:paddingEnd="@dimen/volume_panel_myui_screen_margin">
++
++    <!-- The card. VolumeDialogSlidersViewBinder frosts this view's background. -->
++    <androidx.constraintlayout.widget.ConstraintLayout
++        android:id="@+id/volume_dialog_myui_card"
++        android:layout_width="wrap_content"
++        android:layout_height="wrap_content"
++        android:background="@drawable/volume_panel_myui_background"
++        android:clipChildren="false">
++
++        <!-- Only here because the volume dialog binders look it up; the card is the background of
++             its parent. -->
++        <View
++            android:id="@+id/volume_dialog_background"
++            android:layout_width="1dp"
++            android:layout_height="1dp"
++            android:visibility="gone"
++            app:layout_constraintStart_toStartOf="parent"
++            app:layout_constraintTop_toTopOf="parent"/>
++
++        <TextView
++            android:id="@+id/volume_dialog_myui_title"
++            android:layout_width="0dp"
++            android:layout_height="@dimen/volume_panel_myui_header_height"
++            android:layout_marginTop="@dimen/volume_panel_myui_padding"
++            android:gravity="center"
++            android:text="@string/volume_panel_myui_title"
++            android:textColor="@color/volume_panel_myui_icon"
++            android:textSize="18sp"
++            android:visibility="gone"
++            app:layout_constraintEnd_toEndOf="parent"
++            app:layout_constraintStart_toStartOf="parent"
++            app:layout_constraintTop_toTopOf="parent"/>
++
++        <!-- The sound icon on top of the collapsed column. -->
++        <ImageView
++            android:id="@+id/volume_dialog_myui_sound_icon"
++            android:layout_width="@dimen/volume_panel_myui_header_height"
++            android:layout_height="@dimen/volume_panel_myui_header_height"
++            android:layout_marginTop="@dimen/volume_panel_myui_padding"
++            android:importantForAccessibility="no"
++            android:padding="6dp"
++            android:scaleType="centerInside"
++            android:src="@drawable/ic_speaker_on"
++            android:tint="@color/volume_panel_myui_icon"
++            app:layout_constraintEnd_toEndOf="parent"
++            app:layout_constraintStart_toStartOf="parent"
++            app:layout_constraintTop_toBottomOf="@id/volume_dialog_myui_title"/>
++
++        <!-- Packed horizontal chain, so the collapsed column centres its single slider. -->
++        <LinearLayout
++            android:id="@+id/volume_dialog_floating_sliders_container"
++            android:layout_width="wrap_content"
++            android:layout_height="@dimen/volume_panel_myui_slider_container_height"
++            android:layout_marginStart="@dimen/volume_panel_myui_padding"
++            android:divider="@drawable/volume_panel_myui_sliders_spacer"
++            android:orientation="horizontal"
++            android:showDividers="middle"
++            app:layout_constraintEnd_toStartOf="@id/volume_dialog_main_slider_container"
++            app:layout_constraintHorizontal_chainStyle="packed"
++            app:layout_constraintStart_toStartOf="parent"
++            app:layout_constraintTop_toTopOf="@id/volume_dialog_main_slider_container"/>
++
++        <include
++            android:id="@+id/volume_dialog_main_slider_container"
++            layout="@layout/volume_dialog_slider"
++            android:layout_width="@dimen/volume_panel_myui_slider_width"
++            android:layout_height="@dimen/volume_panel_myui_slider_container_height"
++            android:layout_marginTop="12dp"
++            android:layout_marginEnd="@dimen/volume_panel_myui_padding"
++            app:layout_constraintEnd_toEndOf="parent"
++            app:layout_constraintStart_toEndOf="@id/volume_dialog_floating_sliders_container"
++            app:layout_constraintTop_toBottomOf="@id/volume_dialog_myui_sound_icon"/>
++
++        <View
++            android:id="@+id/volume_dialog_myui_divider"
++            android:layout_width="0dp"
++            android:layout_height="1dp"
++            android:layout_marginStart="@dimen/volume_panel_myui_divider_inset"
++            android:layout_marginTop="14dp"
++            android:layout_marginEnd="@dimen/volume_panel_myui_divider_inset"
++            android:background="@color/volume_panel_myui_divider"
++            app:layout_constraintEnd_toEndOf="parent"
++            app:layout_constraintStart_toStartOf="parent"
++            app:layout_constraintTop_toBottomOf="@id/volume_dialog_main_slider_container"/>
++
++        <!-- Expands the collapsed column. -->
++        <ImageButton
++            android:id="@+id/volume_dialog_expand_collapsed"
++            android:layout_width="@dimen/volume_panel_myui_header_height"
++            android:layout_height="@dimen/volume_panel_myui_header_height"
++            android:layout_marginTop="6dp"
++            android:layout_marginBottom="12dp"
++            android:background="@drawable/ripple_drawable_20dp"
++            android:contentDescription="@string/volume_panel_expand"
++            android:padding="8dp"
++            android:scaleType="centerInside"
++            android:soundEffectsEnabled="false"
++            android:src="@drawable/ic_volume_panel_oneui_more"
++            android:tint="@color/volume_panel_myui_icon"
++            app:layout_constraintBottom_toBottomOf="parent"
++            app:layout_constraintEnd_toEndOf="parent"
++            app:layout_constraintStart_toStartOf="parent"
++            app:layout_constraintTop_toBottomOf="@id/volume_dialog_myui_divider"/>
++
++        <!-- Done and Sound settings along the bottom of the expanded card. -->
++        <LinearLayout
++            android:id="@+id/volume_dialog_myui_footer"
++            android:layout_width="0dp"
++            android:layout_height="wrap_content"
++            android:layout_marginStart="@dimen/volume_panel_myui_divider_inset"
++            android:layout_marginTop="10dp"
++            android:layout_marginEnd="@dimen/volume_panel_myui_divider_inset"
++            android:layout_marginBottom="@dimen/volume_panel_myui_footer_bottom"
++            android:gravity="center_vertical"
++            android:orientation="horizontal"
++            android:visibility="gone"
++            app:layout_constraintBottom_toBottomOf="parent"
++            app:layout_constraintEnd_toEndOf="parent"
++            app:layout_constraintStart_toStartOf="parent"
++            app:layout_constraintTop_toBottomOf="@id/volume_dialog_myui_divider">
++
++            <TextView
++                android:id="@+id/volume_dialog_myui_done"
++                android:layout_width="wrap_content"
++                android:layout_height="36dp"
++                android:background="@drawable/volume_panel_myui_done_background"
++                android:gravity="center"
++                android:paddingStart="22dp"
++                android:paddingEnd="22dp"
++                android:soundEffectsEnabled="false"
++                android:text="@string/volume_panel_myui_done"
++                android:textColor="@color/volume_panel_myui_icon"
++                android:textSize="14sp"
++                android:textStyle="bold"/>
++
++            <Space
++                android:layout_width="0dp"
++                android:layout_height="0dp"
++                android:layout_weight="1"/>
++
++            <ImageButton
++                android:id="@+id/app_volume_icon"
++                android:layout_width="@dimen/volume_panel_myui_header_height"
++                android:layout_height="@dimen/volume_panel_myui_header_height"
++                android:background="@drawable/ripple_drawable_20dp"
++                android:contentDescription="@string/accessibility_volume_settings"
++                android:padding="8dp"
++                android:scaleType="centerInside"
++                android:soundEffectsEnabled="false"
++                android:src="@drawable/ic_app_volume"
++                android:tint="@color/volume_panel_myui_icon"
++                android:visibility="gone"/>
++
++            <ImageButton
++                android:id="@+id/volume_dialog_settings"
++                android:layout_width="@dimen/volume_panel_myui_header_height"
++                android:layout_height="@dimen/volume_panel_myui_header_height"
++                android:background="@drawable/ripple_drawable_20dp"
++                android:contentDescription="@string/accessibility_volume_settings"
++                android:padding="8dp"
++                android:scaleType="centerInside"
++                android:soundEffectsEnabled="false"
++                android:tint="@color/volume_panel_myui_icon"/>
++        </LinearLayout>
++
++        <!-- The expand binder needs this button; MyUI collapses from its Done button instead. -->
++        <ImageButton
++            android:id="@+id/volume_dialog_expand"
++            android:layout_width="1dp"
++            android:layout_height="1dp"
++            android:visibility="gone"
++            app:layout_constraintStart_toStartOf="parent"
++            app:layout_constraintTop_toTopOf="parent"/>
++
++        <!-- The sliders view binder animates these two on overscroll. Gone, so that they take part
++             in neither the layout nor the size the card wraps to. -->
++        <View
++            android:id="@+id/volume_dialog_top_section_container"
++            android:layout_width="1dp"
++            android:layout_height="1dp"
++            android:visibility="gone"
++            app:layout_constraintStart_toStartOf="parent"
++            app:layout_constraintTop_toTopOf="parent"/>
++
++        <View
++            android:id="@+id/volume_dialog_bottom_section_container"
++            android:layout_width="1dp"
++            android:layout_height="1dp"
++            android:visibility="gone"
++            app:layout_constraintBottom_toBottomOf="parent"
++            app:layout_constraintStart_toStartOf="parent"/>
++
++    </androidx.constraintlayout.widget.ConstraintLayout>
++
++    <com.android.systemui.volume.CaptionsToggleImageButton
++        android:id="@+id/odi_captions_icon"
++        android:layout_width="match_parent"
++        android:layout_height="@dimen/volume_panel_myui_captions_size"
++        android:layout_marginTop="10dp"
++        android:background="@drawable/volume_panel_myui_captions_background"
++        android:padding="12dp"
++        android:scaleType="centerInside"
++        android:soundEffectsEnabled="false"
++        android:src="@drawable/ic_volume_odi_captions_disabled"
++        android:tint="@color/volume_panel_myui_icon"
++        android:visibility="gone"/>
++
++</LinearLayout>
+diff --git a/packages/SystemUI/res/values-night/colors.xml b/packages/SystemUI/res/values-night/colors.xml
+index 2d8ae187b07e..9f12cfdb9595 100644
+--- a/packages/SystemUI/res/values-night/colors.xml
++++ b/packages/SystemUI/res/values-night/colors.xml
+@@ -139,4 +139,13 @@
+ 
+     <!-- Keyboard shortcut helper dialog -->
+     <color name="ksh_key_item_color">@*android:color/system_on_surface_variant_dark</color>
++
++    <!-- MyUI volume panel style, dark theme. -->
++    <color name="volume_panel_myui_background_blur">#B31E2126</color>
++    <color name="volume_panel_myui_background_fallback">#F21E2126</color>
++    <color name="volume_panel_myui_track_active">#FFA8C7FA</color>
++    <color name="volume_panel_myui_track_inactive">#FF060708</color>
++    <color name="volume_panel_myui_icon">#FFFFFFFF</color>
++    <color name="volume_panel_myui_divider">#33FFFFFF</color>
++    <color name="volume_panel_myui_button">#33FFFFFF</color>
+ </resources>
+diff --git a/packages/SystemUI/res/values/aospa_dimens.xml b/packages/SystemUI/res/values/aospa_dimens.xml
+index a290c3a6e92b..e868543527c9 100644
+--- a/packages/SystemUI/res/values/aospa_dimens.xml
++++ b/packages/SystemUI/res/values/aospa_dimens.xml
+@@ -48,4 +48,18 @@
+     <dimen name="volume_panel_oneui_header_height">40dp</dimen>
+     <!-- Keeps the header readable when the panel is collapsed down to a single pill. -->
+     <dimen name="volume_panel_oneui_min_width">260dp</dimen>
++
++    <!-- MyUI volume panel style -->
++    <dimen name="volume_panel_myui_background_corner_radius">26dp</dimen>
++    <dimen name="volume_panel_myui_padding">14dp</dimen>
++    <dimen name="volume_panel_myui_header_height">34dp</dimen>
++    <dimen name="volume_panel_myui_slider_width">34dp</dimen>
++    <dimen name="volume_panel_myui_slider_container_height">196dp</dimen>
++    <dimen name="volume_panel_myui_slider_spacing">26dp</dimen>
++    <dimen name="volume_panel_myui_track_size">5dp</dimen>
++    <dimen name="volume_panel_myui_divider_inset">20dp</dimen>
++    <dimen name="volume_panel_myui_captions_size">46dp</dimen>
++    <dimen name="volume_panel_myui_expanded_width">300dp</dimen>
++    <dimen name="volume_panel_myui_screen_margin">12dp</dimen>
++    <dimen name="volume_panel_myui_footer_bottom">20dp</dimen>
+ </resources>
+diff --git a/packages/SystemUI/res/values/colors.xml b/packages/SystemUI/res/values/colors.xml
+index d1eb42b583d1..438bd4274375 100644
+--- a/packages/SystemUI/res/values/colors.xml
++++ b/packages/SystemUI/res/values/colors.xml
+@@ -357,4 +357,13 @@
+         <item>#1AA64A</item>
+         <item>#D37B00</item>
+     </array>
++
++    <!-- MyUI volume panel style, light theme; values-night has the dark one. -->
++    <color name="volume_panel_myui_background_blur">#B3F4F5F8</color>
++    <color name="volume_panel_myui_background_fallback">#F2F4F5F8</color>
++    <color name="volume_panel_myui_track_active">#FF1A73E8</color>
++    <color name="volume_panel_myui_track_inactive">#FFDADEE4</color>
++    <color name="volume_panel_myui_icon">#FF1F1F1F</color>
++    <color name="volume_panel_myui_divider">#26000000</color>
++    <color name="volume_panel_myui_button">#14000000</color>
+ </resources>
+diff --git a/packages/SystemUI/res/values/custom_strings.xml b/packages/SystemUI/res/values/custom_strings.xml
+index f64520ab314d..b1cd0d9d0e30 100644
+--- a/packages/SystemUI/res/values/custom_strings.xml
++++ b/packages/SystemUI/res/values/custom_strings.xml
+@@ -283,4 +283,8 @@
+     <string name="dynamic_island_charging_power">Power</string>
+     <string name="dynamic_island_charging_voltage">Voltage</string>
+     <string name="dynamic_island_charging_temperature">Temperature</string>
++
++    <!-- MyUI volume panel style -->
++    <string name="volume_panel_myui_title">Sound &amp; vibration</string>
++    <string name="volume_panel_myui_done">Done</string>
+ </resources>
+diff --git a/packages/SystemUI/src/com/android/systemui/volume/VolumePanelStyle.kt b/packages/SystemUI/src/com/android/systemui/volume/VolumePanelStyle.kt
+index f09fafd1a6ff..774cc7094846 100644
+--- a/packages/SystemUI/src/com/android/systemui/volume/VolumePanelStyle.kt
++++ b/packages/SystemUI/src/com/android/systemui/volume/VolumePanelStyle.kt
+@@ -25,7 +25,12 @@ enum class VolumePanelStyle(val value: Int) {
+ 
+     EXPANDABLE(1),
+ 
+-    ONE_UI(2);
++    ONE_UI(2),
++
++    MYUI(3);
++
++    val isCard: Boolean
++        get() = this == ONE_UI || this == MYUI
+ 
+     companion object {
+         const val SETTING_NAME = "volume_panel_style"
+diff --git a/packages/SystemUI/src/com/android/systemui/volume/dialog/VolumeDialog.kt b/packages/SystemUI/src/com/android/systemui/volume/dialog/VolumeDialog.kt
+index cd8d79786e8c..d512cad98dc4 100644
+--- a/packages/SystemUI/src/com/android/systemui/volume/dialog/VolumeDialog.kt
++++ b/packages/SystemUI/src/com/android/systemui/volume/dialog/VolumeDialog.kt
+@@ -51,8 +51,8 @@ constructor(
+         fun create(isVolumeDialogVertical: Boolean): VolumeDialog
+     }
+ 
+-    private val isOneUiStyle =
+-        isVolumeDialogVertical && VolumePanelStyle.current(context) == VolumePanelStyle.ONE_UI
++    private val panelStyle = VolumePanelStyle.current(context)
++    private val isOneUiStyle = isVolumeDialogVertical && panelStyle.isCard
+ 
+     init {
+         with(window!!) {
+@@ -95,7 +95,13 @@ constructor(
+     override fun onCreate(savedInstanceState: Bundle?) {
+         super.onCreate(savedInstanceState)
+         if (isOneUiStyle) {
+-            setContentView(R.layout.volume_dialog_oneui)
++            setContentView(
++                if (panelStyle == VolumePanelStyle.MYUI) {
++                    R.layout.volume_dialog_myui
++                } else {
++                    R.layout.volume_dialog_oneui
++                }
++            )
+         } else if (isVolumeDialogVertical) {
+             setContentView(R.layout.volume_dialog)
+         } else {
+diff --git a/packages/SystemUI/src/com/android/systemui/volume/dialog/captions/ui/binder/VolumeDialogCaptionsButtonViewBinder.kt b/packages/SystemUI/src/com/android/systemui/volume/dialog/captions/ui/binder/VolumeDialogCaptionsButtonViewBinder.kt
+index c2bf2b46cd2a..fee61eada953 100644
+--- a/packages/SystemUI/src/com/android/systemui/volume/dialog/captions/ui/binder/VolumeDialogCaptionsButtonViewBinder.kt
++++ b/packages/SystemUI/src/com/android/systemui/volume/dialog/captions/ui/binder/VolumeDialogCaptionsButtonViewBinder.kt
+@@ -63,6 +63,10 @@ constructor(
+                 captionsButton.setBackgroundResource(
+                     R.drawable.volume_panel_oneui_captions_background
+                 )
++            VolumePanelStyle.MYUI ->
++                captionsButton.setBackgroundResource(
++                    R.drawable.volume_panel_myui_captions_background
++                )
+             VolumePanelStyle.DEFAULT -> {}
+         }
+ 
+@@ -98,6 +102,8 @@ constructor(
+                             when {
+                                 panelStyle == VolumePanelStyle.ONE_UI ->
+                                     R.color.volume_panel_oneui_icon
++                                panelStyle == VolumePanelStyle.MYUI ->
++                                    R.color.volume_panel_myui_icon
+                                 panelStyle == VolumePanelStyle.EXPANDABLE && isEnabled ->
+                                     R.color.volume_panel_expandable_icon_on_active
+                                 panelStyle == VolumePanelStyle.EXPANDABLE ->
+diff --git a/packages/SystemUI/src/com/android/systemui/volume/dialog/expansion/ui/binder/VolumeDialogExpandButtonViewBinder.kt b/packages/SystemUI/src/com/android/systemui/volume/dialog/expansion/ui/binder/VolumeDialogExpandButtonViewBinder.kt
+index fca618e32507..cfa6d7ef70a6 100644
+--- a/packages/SystemUI/src/com/android/systemui/volume/dialog/expansion/ui/binder/VolumeDialogExpandButtonViewBinder.kt
++++ b/packages/SystemUI/src/com/android/systemui/volume/dialog/expansion/ui/binder/VolumeDialogExpandButtonViewBinder.kt
+@@ -19,7 +19,10 @@ package com.android.systemui.volume.dialog.expansion.ui.binder
+ import android.content.res.ColorStateList
+ import android.provider.Settings
+ import android.view.View
++import android.view.ViewGroup
+ import android.widget.ImageButton
++import androidx.constraintlayout.widget.ConstraintLayout
++import androidx.core.view.updateLayoutParams
+ import com.android.app.tracing.coroutines.launchInTraced
+ import com.android.app.tracing.coroutines.launchTraced
+ import com.android.systemui.res.R
+@@ -73,8 +76,19 @@ constructor(
+                 }
+             }
+ 
++        val isMyUi = expansionInteractor.style == VolumePanelStyle.MYUI
++        if (isMyUi) {
++            button.visibility = View.GONE
++            view.findViewById<View>(R.id.volume_dialog_myui_done)?.setOnClickListener(toggle)
++        }
++
+         expansionInteractor.isExpanded
+             .onEach { isExpanded ->
++                if (isMyUi) {
++                    view.applyMyUiChrome(isExpanded)
++                    collapsedButton?.visibility = if (isExpanded) View.GONE else View.VISIBLE
++                    return@onEach
++                }
+                 if (expansionInteractor.style == VolumePanelStyle.ONE_UI) {
+                     view.applyOneUiChrome(isExpanded)
+                     collapsedButton?.visibility =
+@@ -111,6 +125,35 @@ constructor(
+             }
+     }
+ 
++    private fun View.applyMyUiChrome(isExpanded: Boolean) {
++        val expandedOnly = if (isExpanded) View.VISIBLE else View.GONE
++        findViewById<View>(R.id.volume_dialog_myui_title)?.visibility = expandedOnly
++        findViewById<View>(R.id.volume_dialog_myui_footer)?.visibility = expandedOnly
++        findViewById<View>(R.id.volume_dialog_myui_sound_icon)?.visibility =
++            if (isExpanded) View.GONE else View.VISIBLE
++        findViewById<View>(R.id.odi_captions_icon)?.apply {
++            alpha = if (isExpanded) 0f else 1f
++            isEnabled = !isExpanded
++        }
++        findViewById<ConstraintLayout>(R.id.volume_dialog_myui_card)?.minWidth =
++            if (isExpanded) {
++                context.resources.getDimensionPixelSize(R.dimen.volume_panel_myui_expanded_width)
++            } else {
++                0
++            }
++        findViewById<View>(R.id.volume_dialog_main_slider_container)
++            ?.updateLayoutParams<ViewGroup.MarginLayoutParams> {
++                marginStart =
++                    if (isExpanded) {
++                        context.resources.getDimensionPixelSize(
++                            R.dimen.volume_panel_myui_slider_spacing
++                        )
++                    } else {
++                        0
++                    }
++            }
++    }
++
+     private fun isPanelOnLeft(view: View): Boolean =
+         Settings.Secure.getInt(
+             view.context.contentResolver,
+diff --git a/packages/SystemUI/src/com/android/systemui/volume/dialog/ringer/ui/binder/VolumeDialogRingerViewBinder.kt b/packages/SystemUI/src/com/android/systemui/volume/dialog/ringer/ui/binder/VolumeDialogRingerViewBinder.kt
+index e7f78e64db8d..c8d1e3008e76 100644
+--- a/packages/SystemUI/src/com/android/systemui/volume/dialog/ringer/ui/binder/VolumeDialogRingerViewBinder.kt
++++ b/packages/SystemUI/src/com/android/systemui/volume/dialog/ringer/ui/binder/VolumeDialogRingerViewBinder.kt
+@@ -117,7 +117,8 @@ constructor(
+         }
+ 
+     override fun CoroutineScope.bind(view: View) {
+-        if (expansionInteractor.style == VolumePanelStyle.ONE_UI) {
++        if (expansionInteractor.style.isCard) {
++            // go.
+             return
+         }
+         val volumeDialogBackgroundView = view.requireViewById<View>(R.id.volume_dialog_background)
+diff --git a/packages/SystemUI/src/com/android/systemui/volume/dialog/settings/domain/VolumeDialogSettingsButtonInteractor.kt b/packages/SystemUI/src/com/android/systemui/volume/dialog/settings/domain/VolumeDialogSettingsButtonInteractor.kt
+index f53fe23a4822..e871c577a4ad 100644
+--- a/packages/SystemUI/src/com/android/systemui/volume/dialog/settings/domain/VolumeDialogSettingsButtonInteractor.kt
++++ b/packages/SystemUI/src/com/android/systemui/volume/dialog/settings/domain/VolumeDialogSettingsButtonInteractor.kt
+@@ -24,7 +24,6 @@ import com.android.systemui.plugins.ActivityStarter
+ import com.android.systemui.shade.domain.interactor.ShadeInteractor
+ import com.android.systemui.statusbar.policy.DeviceProvisionedController
+ import com.android.systemui.volume.Events
+-import com.android.systemui.volume.VolumePanelStyle
+ import com.android.systemui.volume.dialog.dagger.scope.VolumeDialog
+ import com.android.systemui.volume.dialog.dagger.scope.VolumeDialogScope
+ import com.android.systemui.volume.dialog.domain.interactor.ExpandedAudioTileDetailsFeatureInteractor
+@@ -69,7 +68,7 @@ constructor(
+     }
+ 
+     fun onButtonClicked() {
+-        if (expansionInteractor.style == VolumePanelStyle.ONE_UI) {
++        if (expansionInteractor.style.isCard) {
+             activityStarter.startActivityDismissingKeyguard(
+                 /* intent = */ Intent(Settings.ACTION_SOUND_SETTINGS),
+                 /* onlyProvisioned = */ false,
+diff --git a/packages/SystemUI/src/com/android/systemui/volume/dialog/settings/ui/binder/VolumeDialogSettingsButtonViewBinder.kt b/packages/SystemUI/src/com/android/systemui/volume/dialog/settings/ui/binder/VolumeDialogSettingsButtonViewBinder.kt
+index 197e0eec9aff..2fa748e357ad 100644
+--- a/packages/SystemUI/src/com/android/systemui/volume/dialog/settings/ui/binder/VolumeDialogSettingsButtonViewBinder.kt
++++ b/packages/SystemUI/src/com/android/systemui/volume/dialog/settings/ui/binder/VolumeDialogSettingsButtonViewBinder.kt
+@@ -55,7 +55,11 @@ constructor(
+             .onEach { isVisible -> button.visibility = if (isVisible) View.VISIBLE else View.GONE }
+             .launchInTraced("VDSBVB#isVisible", this)
+ 
+-        viewModel.icon.onEach { button.setImageDrawable(it) }.launchInTraced("VDSBVB#icon", this)
++        if (expansionInteractor.style == VolumePanelStyle.MYUI) {
++            button.setImageResource(R.drawable.ic_settings_24dp)
++        } else {
++            viewModel.icon.onEach { button.setImageDrawable(it) }.launchInTraced("VDSBVB#icon", this)
++        }
+ 
+         button.setOnClickListener { viewModel.onButtonClicked() }
+     }
+diff --git a/packages/SystemUI/src/com/android/systemui/volume/dialog/sliders/domain/interactor/VolumeDialogSlidersInteractor.kt b/packages/SystemUI/src/com/android/systemui/volume/dialog/sliders/domain/interactor/VolumeDialogSlidersInteractor.kt
+index 23e7879d437b..0c94357b196d 100644
+--- a/packages/SystemUI/src/com/android/systemui/volume/dialog/sliders/domain/interactor/VolumeDialogSlidersInteractor.kt
++++ b/packages/SystemUI/src/com/android/systemui/volume/dialog/sliders/domain/interactor/VolumeDialogSlidersInteractor.kt
+@@ -21,6 +21,7 @@ import android.media.AudioManager
+ import android.media.AudioSystem
+ import com.android.systemui.volume.VolumeDialogControllerImpl
+ import com.android.systemui.volume.dialog.dagger.scope.VolumeDialog
++import com.android.systemui.volume.VolumePanelStyle
+ import com.android.systemui.volume.dialog.dagger.scope.VolumeDialogScope
+ import com.android.systemui.volume.dialog.domain.interactor.VolumeDialogExpansionInteractor
+ import com.android.systemui.volume.dialog.domain.interactor.VolumeDialogStateInteractor
+@@ -49,6 +50,8 @@ private val EXPANDABLE_STREAMS =
+         AudioManager.STREAM_VOICE_CALL,
+     )
+ 
++private val MYUI_STREAMS = EXPANDABLE_STREAMS + AudioManager.STREAM_NOTIFICATION
++
+ /** Provides a state for the Sliders section of the Volume Dialog. */
+ @VolumeDialogScope
+ class VolumeDialogSlidersInteractor
+@@ -104,7 +107,13 @@ constructor(
+         }
+ 
+         if (!packageManager.isTv()) {
+-            if (expansionInteractor.isExpandable && streamModel.stream in EXPANDABLE_STREAMS) {
++            val expandableStreams =
++                if (expansionInteractor.style == VolumePanelStyle.MYUI) {
++                    MYUI_STREAMS
++                } else {
++                    EXPANDABLE_STREAMS
++                }
++            if (expansionInteractor.isExpandable && streamModel.stream in expandableStreams) {
+                 return true
+             }
+ 
+diff --git a/packages/SystemUI/src/com/android/systemui/volume/dialog/sliders/ui/VolumeDialogSliderViewBinder.kt b/packages/SystemUI/src/com/android/systemui/volume/dialog/sliders/ui/VolumeDialogSliderViewBinder.kt
+index bd5542646011..a30ca3b135ee 100644
+--- a/packages/SystemUI/src/com/android/systemui/volume/dialog/sliders/ui/VolumeDialogSliderViewBinder.kt
++++ b/packages/SystemUI/src/com/android/systemui/volume/dialog/sliders/ui/VolumeDialogSliderViewBinder.kt
+@@ -125,8 +125,23 @@ private fun VolumeDialogSlider(
+ ) {
+     val isPillStyle = panelStyle != VolumePanelStyle.DEFAULT
+     val isOneUi = panelStyle == VolumePanelStyle.ONE_UI
++    val isMyUi = panelStyle == VolumePanelStyle.MYUI
+     val colors =
+         when {
++            isMyUi -> {
++                val active = colorResource(R.color.volume_panel_myui_track_active)
++                val inactive = colorResource(R.color.volume_panel_myui_track_inactive)
++                SliderDefaults.colors(
++                    activeTrackColor = active,
++                    inactiveTrackColor = inactive,
++                    activeTickColor = active,
++                    inactiveTickColor = inactive,
++                    disabledActiveTrackColor = active,
++                    disabledInactiveTrackColor = inactive,
++                    disabledActiveTickColor = active,
++                    disabledInactiveTickColor = inactive,
++                )
++            }
+             isOneUi -> {
+                 val active = colorResource(R.color.volume_panel_oneui_track_active)
+                 val inactive = colorResource(R.color.volume_panel_oneui_track_inactive)
+@@ -177,19 +192,21 @@ private fun VolumeDialogSlider(
+ 
+     val trackSize =
+         when {
++            isMyUi -> dimensionResource(R.dimen.volume_panel_myui_track_size)
+             isOneUi -> dimensionResource(R.dimen.volume_panel_oneui_track_size)
+             isPillStyle -> dimensionResource(R.dimen.volume_panel_expandable_track_size)
+             else -> dimensions.trackSize
+         }
+     val trackCornerSize =
+         when {
++            isMyUi -> dimensionResource(R.dimen.volume_panel_myui_track_size) / 2
+             isOneUi -> dimensionResource(R.dimen.volume_panel_oneui_track_corner_radius)
+             isPillStyle -> dimensionResource(R.dimen.volume_panel_expandable_track_corner_radius)
+             else -> 12.dp
+         }
+ 
+     val bottomIcon: (@Composable BoxScope.(iconsState: SliderIconsState) -> Unit)? =
+-        if (isPillStyle) {
++        if (isPillStyle && !isMyUi) {
+             val iconTint =
+                 if (isOneUi) {
+                     colorResource(R.color.volume_panel_oneui_icon)
+@@ -348,7 +365,17 @@ private fun VolumeDialogSlider(
+         )
+     }
+ 
+-    if (isOneUi && showLabel) {
++    if (isMyUi) {
++        val iconTint = colorResource(R.color.volume_panel_myui_icon)
++        Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = modifier) {
++            slider(Modifier.weight(1f))
++            Icon(
++                icon = sliderStateModel.icon,
++                tint = { iconTint },
++                modifier = Modifier.padding(top = 12.dp).size(dimensions.iconSize + 4.dp),
++            )
++        }
++    } else if (isOneUi && showLabel) {
+         Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = modifier) {
+             slider(Modifier.weight(1f))
+             Text(
+diff --git a/packages/SystemUI/src/com/android/systemui/volume/dialog/sliders/ui/VolumeDialogSlidersViewBinder.kt b/packages/SystemUI/src/com/android/systemui/volume/dialog/sliders/ui/VolumeDialogSlidersViewBinder.kt
+index 6222686a9e36..1eac9f690a07 100644
+--- a/packages/SystemUI/src/com/android/systemui/volume/dialog/sliders/ui/VolumeDialogSlidersViewBinder.kt
++++ b/packages/SystemUI/src/com/android/systemui/volume/dialog/sliders/ui/VolumeDialogSlidersViewBinder.kt
+@@ -58,7 +58,10 @@ constructor(
+         get() = expansionInteractor.isExpandable
+ 
+     private val isOneUiStyle: Boolean
+-        get() = expansionInteractor.style == VolumePanelStyle.ONE_UI
++        get() = expansionInteractor.style.isCard
++
++    private val isMyUiStyle: Boolean
++        get() = expansionInteractor.style == VolumePanelStyle.MYUI
+ 
+     override fun CoroutineScope.bind(view: View) {
+ 
+@@ -76,18 +79,26 @@ constructor(
+ 
+         if (isOneUiStyle) {
+             launchTraced("VDSVB#addCardTouchableBounds") { dialogViewModel.addTouchableBounds(view) }
++            val cardView: View =
++                if (isMyUiStyle) view.requireViewById(R.id.volume_dialog_myui_card) else view
+             val card: Drawable? =
+-                view.background?.let { if (viewModel.showBlur) view.frostedCard(it) else it }
++                cardView.background?.let {
++                    if (viewModel.showBlur) cardView.frostedCard(it) else it
++                }
+             if (viewModel.showBlur && card != null) {
+                 launchTraced("VDSVB#cardBlur") {
+                     windowRootViewBlurInteractor.isBlurCurrentlySupported.collect { supported ->
+-                        view.applyCardBlurSupport(card, supported)
++                        cardView.applyCardBlurSupport(card, supported)
+                     }
+                 }
+             }
+-            launchTraced("VDSVB#cardVisibility") {
+-                expansionInteractor.isExpanded.collect { isExpanded ->
+-                    view.background = if (isExpanded) card else null
++            if (isMyUiStyle) {
++                cardView.background = card
++            } else {
++                launchTraced("VDSVB#cardVisibility") {
++                    expansionInteractor.isExpanded.collect { isExpanded ->
++                        cardView.background = if (isExpanded) card else null
++                    }
+                 }
+             }
+         } else if (isExpandableStyle) {
+@@ -124,6 +135,14 @@ constructor(
+                 )
+                 floatingSliderViewBinders.fastForEachIndexed { index, sliderComponent ->
+                     val sliderContainer = floatingSlidersContainer.getChildAt(index)
++                    if (isMyUiStyle) {
++                        sliderContainer.updateLayoutParams<ViewGroup.LayoutParams> {
++                            width =
++                                view.context.resources.getDimensionPixelSize(
++                                    R.dimen.volume_panel_myui_slider_width
++                                )
++                        }
++                    }
+                     if (viewModel.showBlur && !isExpandableStyle) {
+                         sliderContainer.updateBackground()
+                     }
+@@ -150,7 +169,13 @@ constructor(
+         val blurDrawable = viewRootImpl.createBackgroundBlurDrawable()
+         blurDrawable.setCornerRadius(
+             context.resources
+-                .getDimensionPixelSize(R.dimen.volume_panel_oneui_background_corner_radius)
++                .getDimensionPixelSize(
++                    if (isMyUiStyle) {
++                        R.dimen.volume_panel_myui_background_corner_radius
++                    } else {
++                        R.dimen.volume_panel_oneui_background_corner_radius
++                    }
++                )
+                 .toFloat()
+         )
+         blurDrawable.setBlurRadius(0)
+@@ -172,10 +197,11 @@ constructor(
+         )
+         (layers.getDrawable(1) as GradientDrawable).setColor(
+             context.getColor(
+-                if (supported) {
+-                    R.color.volume_panel_oneui_background_blur
+-                } else {
+-                    R.color.volume_panel_oneui_background_fallback
++                when {
++                    isMyUiStyle && supported -> R.color.volume_panel_myui_background_blur
++                    isMyUiStyle -> R.color.volume_panel_myui_background_fallback
++                    supported -> R.color.volume_panel_oneui_background_blur
++                    else -> R.color.volume_panel_oneui_background_fallback
+                 }
+             )
+         )
+diff --git a/packages/SystemUI/src/com/android/systemui/volume/dialog/ui/binder/VolumeDialogViewBinder.kt b/packages/SystemUI/src/com/android/systemui/volume/dialog/ui/binder/VolumeDialogViewBinder.kt
+index b9e7f6343197..eff3ab00f9c7 100644
+--- a/packages/SystemUI/src/com/android/systemui/volume/dialog/ui/binder/VolumeDialogViewBinder.kt
++++ b/packages/SystemUI/src/com/android/systemui/volume/dialog/ui/binder/VolumeDialogViewBinder.kt
+@@ -42,7 +42,6 @@ import com.android.systemui.dagger.qualifiers.Application
+ import com.android.systemui.res.R
+ import com.android.systemui.util.kotlin.awaitCancellationThenDispose
+ import com.android.systemui.util.view.listenToComputeInternalInsets
+-import com.android.systemui.volume.VolumePanelStyle
+ import com.android.systemui.volume.dialog.captions.ui.viewmodel.VolumeDialogCaptionsButtonViewModel
+ import com.android.systemui.volume.dialog.dagger.scope.VolumeDialog
+ import com.android.systemui.volume.dialog.dagger.scope.VolumeDialogScope
+@@ -85,7 +84,7 @@ constructor(
+ ) {
+ 
+     private val isOneUiStyle: Boolean
+-        get() = expansionInteractor.style == VolumePanelStyle.ONE_UI
++        get() = expansionInteractor.style.isCard
+ 
+     private val halfOpenedOffsetPx: Float =
+         context.resources.getDimensionPixelSize(R.dimen.volume_dialog_half_opened_offset).toFloat()
+-- 
+2.43.0
+

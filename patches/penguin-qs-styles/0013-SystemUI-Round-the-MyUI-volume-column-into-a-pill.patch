@@ -1,0 +1,105 @@
+From a0011dddccc07e33536dec78efaa50525c2c0134 Mon Sep 17 00:00:00 2001
+From: redducc <sushmit718@gmail.com>
+Date: Sun, 27 Sep 2026 13:15:23 +0000
+Subject: [PATCH] SystemUI: Round the MyUI volume column into a pill
+
+The expanded card gets a slightly larger radius, as MyUI's does.
+---
+ .../drawable/volume_panel_myui_background.xml |  2 +-
+ .../volume_panel_myui_captions_background.xml |  4 ++--
+ packages/SystemUI/res/values/aospa_dimens.xml |  4 +++-
+ .../ui/VolumeDialogSlidersViewBinder.kt       | 24 +++++++++++++++++++
+ 4 files changed, 30 insertions(+), 4 deletions(-)
+
+diff --git a/packages/SystemUI/res/drawable/volume_panel_myui_background.xml b/packages/SystemUI/res/drawable/volume_panel_myui_background.xml
+index 1a259ad8f2d6..f5ef167c6f82 100644
+--- a/packages/SystemUI/res/drawable/volume_panel_myui_background.xml
++++ b/packages/SystemUI/res/drawable/volume_panel_myui_background.xml
+@@ -18,6 +18,6 @@
+      tint and puts a blur layer underneath when blur is available. -->
+ <shape xmlns:android="http://schemas.android.com/apk/res/android"
+     android:shape="rectangle">
+-    <corners android:radius="@dimen/volume_panel_myui_background_corner_radius" />
++    <corners android:radius="@dimen/volume_panel_myui_collapsed_corner_radius" />
+     <solid android:color="@color/volume_panel_myui_background_fallback" />
+ </shape>
+diff --git a/packages/SystemUI/res/drawable/volume_panel_myui_captions_background.xml b/packages/SystemUI/res/drawable/volume_panel_myui_captions_background.xml
+index e953a9f7228d..9b568ef1b5e4 100644
+--- a/packages/SystemUI/res/drawable/volume_panel_myui_captions_background.xml
++++ b/packages/SystemUI/res/drawable/volume_panel_myui_captions_background.xml
+@@ -21,13 +21,13 @@
+             android:paddingMode="stack">
+     <item>
+         <shape android:shape="rectangle">
+-            <corners android:radius="@dimen/volume_panel_myui_background_corner_radius" />
++            <corners android:radius="@dimen/volume_panel_myui_collapsed_corner_radius" />
+             <solid android:color="@color/volume_panel_myui_background_fallback" />
+         </shape>
+     </item>
+     <item>
+         <shape android:shape="rectangle">
+-            <corners android:radius="@dimen/volume_panel_myui_background_corner_radius" />
++            <corners android:radius="@dimen/volume_panel_myui_collapsed_corner_radius" />
+             <solid android:color="@color/volume_panel_myui_track_active" />
+         </shape>
+     </item>
+diff --git a/packages/SystemUI/res/values/aospa_dimens.xml b/packages/SystemUI/res/values/aospa_dimens.xml
+index e868543527c9..c07e10e6200e 100644
+--- a/packages/SystemUI/res/values/aospa_dimens.xml
++++ b/packages/SystemUI/res/values/aospa_dimens.xml
+@@ -50,7 +50,9 @@
+     <dimen name="volume_panel_oneui_min_width">260dp</dimen>
+ 
+     <!-- MyUI volume panel style -->
+-    <dimen name="volume_panel_myui_background_corner_radius">26dp</dimen>
++    <dimen name="volume_panel_myui_background_corner_radius">30dp</dimen>
++    <!-- Half the collapsed column, 14dp + 34dp + 14dp wide. -->
++    <dimen name="volume_panel_myui_collapsed_corner_radius">31dp</dimen>
+     <dimen name="volume_panel_myui_padding">14dp</dimen>
+     <dimen name="volume_panel_myui_header_height">34dp</dimen>
+     <dimen name="volume_panel_myui_slider_width">34dp</dimen>
+diff --git a/packages/SystemUI/src/com/android/systemui/volume/dialog/sliders/ui/VolumeDialogSlidersViewBinder.kt b/packages/SystemUI/src/com/android/systemui/volume/dialog/sliders/ui/VolumeDialogSlidersViewBinder.kt
+index 1eac9f690a07..aa3f0fd6501d 100644
+--- a/packages/SystemUI/src/com/android/systemui/volume/dialog/sliders/ui/VolumeDialogSlidersViewBinder.kt
++++ b/packages/SystemUI/src/com/android/systemui/volume/dialog/sliders/ui/VolumeDialogSlidersViewBinder.kt
+@@ -94,6 +94,21 @@ constructor(
+             }
+             if (isMyUiStyle) {
+                 cardView.background = card
++                launchTraced("VDSVB#cardCorners") {
++                    expansionInteractor.isExpanded.collect { isExpanded ->
++                        card?.setCornerRadius(
++                            cardView.context.resources
++                                .getDimensionPixelSize(
++                                    if (isExpanded) {
++                                        R.dimen.volume_panel_myui_background_corner_radius
++                                    } else {
++                                        R.dimen.volume_panel_myui_collapsed_corner_radius
++                                    }
++                                )
++                                .toFloat()
++                        )
++                    }
++                }
+             } else {
+                 launchTraced("VDSVB#cardVisibility") {
+                     expansionInteractor.isExpanded.collect { isExpanded ->
+@@ -184,6 +199,15 @@ constructor(
+         }
+     }
+ 
++    private fun Drawable.setCornerRadius(radius: Float) {
++        when (this) {
++            is LayerDrawable ->
++                (0 until numberOfLayers).forEach { getDrawable(it).setCornerRadius(radius) }
++            is BackgroundBlurDrawable -> setCornerRadius(radius)
++            is GradientDrawable -> cornerRadius = radius
++        }
++    }
++
+     private fun View.applyCardBlurSupport(card: Drawable, supported: Boolean) {
+         val layers = card as? LayerDrawable ?: return
+         (layers.getDrawable(0) as BackgroundBlurDrawable).setBlurRadius(
+-- 
+2.43.0
+

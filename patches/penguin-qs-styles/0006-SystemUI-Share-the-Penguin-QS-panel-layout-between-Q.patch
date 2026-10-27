@@ -1,0 +1,1103 @@
+From 9f25df165ea2fef13285e7666732953f2a180336 Mon Sep 17 00:00:00 2001
+From: redducc <sushmit718@gmail.com>
+Date: Fri, 11 Sep 2026 07:59:18 +0000
+Subject: [PATCH] SystemUI: Share the Penguin QS panel layout between QQS and
+ QS
+
+---
+ .../qs/ui/composable/QuickSettingsContent.kt  | 117 ++++++---
+ .../qs/ui/composable/QuickSettingsScene.kt    |   1 +
+ .../composable/QuickSettingsShadeOverlay.kt   |   3 +
+ .../shade/ui/composable/ShadeScene.kt         | 235 +++++++++++-------
+ .../qs/composefragment/ConnectivityFolder.kt  |  15 +-
+ .../qs/composefragment/PenguinMedia.kt        |   4 +-
+ .../qs/composefragment/QSFragmentCompose.kt   |  26 +-
+ .../systemui/qs/panels/ui/compose/EditMode.kt |   9 +-
+ .../qs/panels/ui/compose/EditTileListState.kt |  44 +++-
+ .../ui/compose/infinitegrid/EditTile.kt       |  41 ++-
+ .../infinitegrid/InfiniteGridLayout.kt        |  18 +-
+ 11 files changed, 363 insertions(+), 150 deletions(-)
+
+diff --git a/packages/SystemUI/compose/features/src/com/android/systemui/qs/ui/composable/QuickSettingsContent.kt b/packages/SystemUI/compose/features/src/com/android/systemui/qs/ui/composable/QuickSettingsContent.kt
+index c79be015a709..fd6323a5e98e 100644
+--- a/packages/SystemUI/compose/features/src/com/android/systemui/qs/ui/composable/QuickSettingsContent.kt
++++ b/packages/SystemUI/compose/features/src/com/android/systemui/qs/ui/composable/QuickSettingsContent.kt
+@@ -81,8 +81,10 @@ import com.android.systemui.qs.panels.ui.compose.SLIDERS_SPEC
+ import com.android.systemui.qs.pipeline.shared.TileSpec
+ import com.android.systemui.qs.composefragment.SETTING_QS_MEDIA_STYLE
+ import com.android.systemui.qs.composefragment.SETTING_QS_SLIDERS_POSITION
++import com.android.systemui.qs.composefragment.DEFAULT_SLIDERS_SPAN
+ import com.android.systemui.qs.composefragment.SETTING_QS_SLIDERS_SPAN
+ import com.android.systemui.qs.composefragment.SETTING_QS_MEDIA_SPAN
++import com.android.systemui.qs.composefragment.qsModuleHeight
+ import com.android.systemui.qs.composefragment.secureIntSetting
+ import com.android.systemui.qs.composefragment.VolumeLayout
+ import com.android.systemui.qs.composefragment.ui.GridAnchor
+@@ -251,15 +253,17 @@ private fun ContentScope.PenguinQuickSettingsContent(
+     val mediaSpan = secureIntSetting(SETTING_QS_MEDIA_SPAN, 1)
+     val headerHeight = dimensionResource(id = R.dimen.common_tile_default_tile_height)
+     val slidersPosition = secureIntSetting(SETTING_QS_SLIDERS_POSITION, POSITION_HEADER)
+-    val slidersSpan = secureIntSetting(SETTING_QS_SLIDERS_SPAN, 1)
++    val slidersSpan = secureIntSetting(SETTING_QS_SLIDERS_SPAN, DEFAULT_SLIDERS_SPAN)
+     val standingSliderHeight =
+         headerHeight * 2 + dimensionResource(id = R.dimen.qs_tile_margin_vertical)
+     val slidersInHeader = false
+     val folderPosition = secureIntSetting(SETTING_QS_FOLDER_POSITION, POSITION_HEADER)
+     val mediaPosition = secureIntSetting(SETTING_QS_MEDIA_POSITION, POSITION_HEADER)
+-    val headerShowsMedia = mediaWantsHeader && mediaPosition == POSITION_HEADER
++    val headerPairFits = mediaSpan < 2 && folderSpan < 2
++    val headerShowsMedia =
++        mediaWantsHeader && mediaPosition <= POSITION_ABOVE_GRID && headerPairFits
+     val headerShowsFolder =
+-        folderEnabled && folderSpan < 2 && folderPosition == POSITION_HEADER
++        folderEnabled && folderPosition <= POSITION_ABOVE_GRID && headerPairFits
+     val headerShowsBoth = headerShowsMedia && headerShowsFolder
+     val headerHasContent = headerShowsFolder || headerShowsMedia
+     val headerLeftIsHalf =
+@@ -290,7 +294,7 @@ private fun ContentScope.PenguinQuickSettingsContent(
+                     ConnectivityFolder(
+                         tiles = viewModel.tileGridViewModel.tileViewModels,
+                         modifier = Modifier.element(Elements.ConnectivityFolder),
+-                        compactHeight = headerHeight,
++                        compactHeight = qsModuleHeight(2),
+                         expanded = false,
+                         onExpandedChange = { folderExpanded = it },
+                     )
+@@ -307,7 +311,7 @@ private fun ContentScope.PenguinQuickSettingsContent(
+                     ConnectivityFolder(
+                         tiles = viewModel.tileGridViewModel.tileViewModels,
+                         modifier = Modifier.element(Elements.ConnectivityFolder),
+-                        compactHeight = headerHeight,
++                        compactHeight = qsModuleHeight(2),
+                         expanded = false,
+                         onExpandedChange = { folderExpanded = it },
+                     )
+@@ -360,7 +364,8 @@ private fun ContentScope.PenguinQuickSettingsContent(
+                                     ConnectivityFolder(
+                                         tiles = viewModel.tileGridViewModel.tileViewModels,
+                                         modifier = Modifier.element(Elements.ConnectivityFolder),
+-                                        compactHeight = if (folderSpan < 2) headerHeight else null,
++                                        compactHeight =
++                                            if (folderSpan < 2) qsModuleHeight(2) else null,
+                                         onExpandedChange = { folderExpanded = it },
+                                     )
+                                 }
+@@ -401,17 +406,17 @@ private fun ContentScope.PenguinQuickSettingsContent(
+                     }
+                     val aboveElements = elementsAt(POSITION_ABOVE_GRID).sortedBy { it.order }
+                     val belowElements = elementsAt(POSITION_BELOW_GRID).sortedBy { it.order }
+-                    val aboveNeedsFiller = aboveElements.count { it.span < 2 } % 2 == 1
+-                    val belowNeedsFiller = belowElements.count { it.span < 2 } % 2 == 1
+                     val pool = availableTiles.map { it.spec }.filterNot { it in headerSpecs }
+-                    val aboveFiller = if (aboveNeedsFiller) pool.take(2) else emptyList()
+-                    val belowFiller =
+-                        if (belowNeedsFiller) pool.drop(aboveFiller.size).take(2) else emptyList()
++                    val aboveSlots = panelFillerSlots(aboveElements)
++                    val belowSlots = panelFillerSlots(belowElements)
++                    val aboveFillers = List(aboveSlots) { pool.drop(it * 2).take(2) }
++                    val belowFillers =
++                        List(belowSlots) { pool.drop((aboveSlots + it) * 2).take(2) }
+                     val excludeSpecs =
+-                        headerSpecs + aboveFiller + belowFiller + inFolderSpecs
++                        headerSpecs + aboveFillers.flatten() + belowFillers.flatten() + inFolderSpecs
+ 
+-                    PanelElementRows(aboveElements, gap) {
+-                        FillerTiles(viewModel, aboveFiller, listening)
++                    PanelElementRows(aboveElements, gap) { slot ->
++                        FillerTiles(viewModel, aboveFillers.getOrElse(slot) { emptyList() }, listening)
+                     }
+                     Box {
+                         GridAnchor()
+@@ -429,8 +434,12 @@ private fun ContentScope.PenguinQuickSettingsContent(
+                                         },
+                                     verticalArrangement = spacedBy(rowGap),
+                                 ) {
+-                                    PanelElementRows(belowElements, gap) {
+-                                        FillerTiles(viewModel, belowFiller, listening)
++                                    PanelElementRows(belowElements, gap) { slot ->
++                                        FillerTiles(
++                                            viewModel,
++                                            belowFillers.getOrElse(slot) { emptyList() },
++                                            listening,
++                                        )
+                                     }
+                                 }
+                             },
+@@ -456,7 +465,7 @@ fun panelElementPreviews(
+     val gap = dimensionResource(id = R.dimen.qs_tile_margin_horizontal)
+     val folderSpan = secureIntSetting(SETTING_QS_FOLDER_SPAN, 1)
+     val mediaSpan = secureIntSetting(SETTING_QS_MEDIA_SPAN, 1)
+-    val slidersStanding = secureIntSetting(SETTING_QS_SLIDERS_SPAN, 1) < 2
++    val slidersStanding = secureIntSetting(SETTING_QS_SLIDERS_SPAN, DEFAULT_SLIDERS_SPAN) < 2
+     return mapOf(
+         FOLDER_SPEC to
+             {
+@@ -464,7 +473,7 @@ fun panelElementPreviews(
+                     ConnectivityFolder(
+                         tiles = viewModel.tileGridViewModel.tileViewModels,
+                         interactive = false,
+-                        compactHeight = if (folderSpan < 2) elementHeight else null,
++                        compactHeight = if (folderSpan < 2) qsModuleHeight(2) else null,
+                     )
+                 }
+             },
+@@ -488,23 +497,25 @@ fun panelElementPreviews(
+                         verticalAlignment = Alignment.CenterVertically,
+                     ) {
+                         Box(Modifier.weight(1f)) {
+-                            VolumeLayout(
++                            BrightnessLayout(
+                                 enable = false,
+                                 horizontal = !slidersStanding,
+                                 verticalCornerRadius = MyUiSliderCorner,
+                                 verticalWidth = null,
+                                 sliderHeight =
+                                     if (slidersStanding) standingHeight else LyingSliderHeight,
++                                interactive = false,
+                             )
+                         }
+                         Box(Modifier.weight(1f)) {
+-                            BrightnessLayout(
++                            VolumeLayout(
+                                 enable = false,
+                                 horizontal = !slidersStanding,
+                                 verticalCornerRadius = MyUiSliderCorner,
+                                 verticalWidth = null,
+                                 sliderHeight =
+                                     if (slidersStanding) standingHeight else LyingSliderHeight,
++                                interactive = false,
+                             )
+                         }
+                     }
+@@ -559,6 +570,20 @@ fun qsHeaderPreview(viewModel: QuickSettingsContainerViewModel): (@Composable ()
+     }
+ }
+ 
++@Composable
++fun panelElementPreviewHeights(): Map<TileSpec, Dp> {
++    val elementHeight = dimensionResource(id = R.dimen.common_tile_default_tile_height)
++    val twoRows = elementHeight * 2 + dimensionResource(id = R.dimen.qs_tile_margin_vertical)
++    val folderFull = secureIntSetting(SETTING_QS_FOLDER_SPAN, 1) >= 2
++    val mediaFull = secureIntSetting(SETTING_QS_MEDIA_SPAN, 1) >= 2
++    val slidersLying = secureIntSetting(SETTING_QS_SLIDERS_SPAN, DEFAULT_SLIDERS_SPAN) >= 2
++    return mapOf(
++        FOLDER_SPEC to if (folderFull) FolderFlatHeight else twoRows,
++        MEDIA_SPEC to if (mediaFull) PenguinMediaHeight else twoRows,
++        SLIDERS_SPEC to if (slidersLying) LyingSliderHeight else twoRows,
++    )
++}
++
+ @Composable
+ private fun PanelElementPreview(span: Int, content: @Composable () -> Unit) {
+     val margin = dimensionResource(id = R.dimen.qs_horizontal_margin)
+@@ -599,28 +624,60 @@ private fun PanelElementPreview(span: Int, content: @Composable () -> Unit) {
+ private val CompactSliderHeight = 96.dp
+ internal val MyUiSliderCorner = 22.dp
+ private val LyingSliderHeight = 56.dp
++private val FolderFlatHeight = 92.dp
+ private val PenguinMediaHeight = 132.dp
+ 
+-private class PanelElement(
++internal class PanelElement(
+     val span: Int,
+     val order: Int,
+     val alignEnd: Boolean = false,
+     val content: @Composable () -> Unit,
+ )
+ 
++internal fun panelFillerSlots(elements: List<PanelElement>): Int {
++    var slots = 0
++    var index = 0
++    while (index < elements.size) {
++        if (elements[index].span >= 2) {
++            index++
++            continue
++        }
++        val paired = elements.getOrNull(index + 1)?.span?.let { it < 2 } ?: false
++        if (!paired) slots++
++        index += if (paired) 2 else 1
++    }
++    return slots
++}
++
+ @Composable
+-private fun PanelElementRows(
++internal fun PanelElementRows(
+     elements: List<PanelElement>,
+     gap: Dp,
+-    filler: @Composable () -> Unit = {},
++    filler: @Composable (slot: Int) -> Unit = {},
+ ) {
+-    elements.filter { it.span >= 2 }.forEach { Box(Modifier.fillMaxWidth()) { it.content() } }
+-    elements.filter { it.span < 2 }.chunked(2).forEach { pair ->
++    var slot = 0
++    var index = 0
++    while (index < elements.size) {
++        val element = elements[index]
++        if (element.span >= 2) {
++            Box(Modifier.fillMaxWidth()) { element.content() }
++            index++
++            continue
++        }
++        val partner = elements.getOrNull(index + 1)?.takeIf { it.span < 2 }
+         Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = spacedBy(gap)) {
+-            if (pair.size == 1 && pair[0].alignEnd) Box(Modifier.weight(1f)) { filler() }
+-            pair.forEach { element -> Box(Modifier.weight(1f)) { element.content() } }
+-            if (pair.size == 1 && !pair[0].alignEnd) Box(Modifier.weight(1f)) { filler() }
++            val fillerSlot = slot
++            if (partner == null && element.alignEnd) {
++                Box(Modifier.weight(1f)) { filler(fillerSlot) }
++            }
++            Box(Modifier.weight(1f)) { element.content() }
++            partner?.let { Box(Modifier.weight(1f)) { it.content() } }
++            if (partner == null && !element.alignEnd) {
++                Box(Modifier.weight(1f)) { filler(fillerSlot) }
++            }
+         }
++        if (partner == null) slot++
++        index += if (partner != null) 2 else 1
+     }
+ }
+ 
+@@ -688,7 +745,7 @@ private fun ContentScope.QsStandingSliders(sliderHeight: Dp, gap: Dp) {
+             horizontalArrangement = spacedBy(gap),
+         ) {
+             Box(Modifier.weight(1f)) {
+-                VolumeLayout(
++                BrightnessLayout(
+                     enable = interactable,
+                     verticalCornerRadius = MyUiSliderCorner,
+                     verticalWidth = null,
+@@ -696,7 +753,7 @@ private fun ContentScope.QsStandingSliders(sliderHeight: Dp, gap: Dp) {
+                 )
+             }
+             Box(Modifier.weight(1f)) {
+-                BrightnessLayout(
++                VolumeLayout(
+                     enable = interactable,
+                     verticalCornerRadius = MyUiSliderCorner,
+                     verticalWidth = null,
+diff --git a/packages/SystemUI/compose/features/src/com/android/systemui/qs/ui/composable/QuickSettingsScene.kt b/packages/SystemUI/compose/features/src/com/android/systemui/qs/ui/composable/QuickSettingsScene.kt
+index 15f437473602..296bb77640bf 100644
+--- a/packages/SystemUI/compose/features/src/com/android/systemui/qs/ui/composable/QuickSettingsScene.kt
++++ b/packages/SystemUI/compose/features/src/com/android/systemui/qs/ui/composable/QuickSettingsScene.kt
+@@ -297,6 +297,7 @@ private fun ContentScope.QuickSettingsScene(
+                                             .dp
+                                 ),
+                         previews = panelElementPreviews(viewModel.qsContainerViewModel),
++                        previewHeights = panelElementPreviewHeights(),
+                         headerPreview =
+                             qsHeaderPreview(viewModel.qsContainerViewModel),
+                     )
+diff --git a/packages/SystemUI/compose/features/src/com/android/systemui/qs/ui/composable/QuickSettingsShadeOverlay.kt b/packages/SystemUI/compose/features/src/com/android/systemui/qs/ui/composable/QuickSettingsShadeOverlay.kt
+index 03b28a3f9b61..c07fad0e38c3 100644
+--- a/packages/SystemUI/compose/features/src/com/android/systemui/qs/ui/composable/QuickSettingsShadeOverlay.kt
++++ b/packages/SystemUI/compose/features/src/com/android/systemui/qs/ui/composable/QuickSettingsShadeOverlay.kt
+@@ -320,6 +320,9 @@ private fun ContentScope.QuickSettingsContainer(
+                                 horizontal = QuickSettingsShade.Dimensions.HorizontalPadding,
+                                 vertical = QuickSettingsShade.Dimensions.VerticalPadding,
+                             ),
++                    previews = panelElementPreviews(containerViewModel),
++                    previewHeights = panelElementPreviewHeights(),
++                    headerPreview = qsHeaderPreview(containerViewModel),
+                 )
+             }
+ 
+diff --git a/packages/SystemUI/compose/features/src/com/android/systemui/shade/ui/composable/ShadeScene.kt b/packages/SystemUI/compose/features/src/com/android/systemui/shade/ui/composable/ShadeScene.kt
+index a1b4af2164e4..9f862c57f67a 100644
+--- a/packages/SystemUI/compose/features/src/com/android/systemui/shade/ui/composable/ShadeScene.kt
++++ b/packages/SystemUI/compose/features/src/com/android/systemui/shade/ui/composable/ShadeScene.kt
+@@ -20,13 +20,16 @@ import com.android.systemui.qs.composefragment.BrightnessLayout
+ import com.android.systemui.qs.composefragment.ConnectivityFolder
+ import com.android.systemui.qs.composefragment.MyUiGridGap
+ import com.android.systemui.qs.composefragment.PenguinMediaCard
++import com.android.systemui.qs.composefragment.SETTING_QS_MEDIA_SPAN
+ import com.android.systemui.qs.composefragment.SETTING_QS_MEDIA_STYLE
+ import com.android.systemui.qs.composefragment.connectivityFolderEnabled
++import com.android.systemui.qs.composefragment.connectivityFolderSpecs
+ import com.android.systemui.qs.composefragment.POSITION_HEADER
+ import com.android.systemui.qs.composefragment.SETTING_QS_FOLDER_POSITION
+ import com.android.systemui.qs.composefragment.POSITION_ABOVE_GRID
+ import com.android.systemui.qs.composefragment.SETTING_QS_FOLDER_SPAN
+ import com.android.systemui.qs.composefragment.SETTING_QS_SLIDERS_POSITION
++import com.android.systemui.qs.composefragment.DEFAULT_SLIDERS_SPAN
+ import com.android.systemui.qs.composefragment.SETTING_QS_SLIDERS_SPAN
+ import com.android.systemui.qs.composefragment.secureIntSetting
+ import com.android.systemui.qs.composefragment.VolumeLayout
+@@ -124,6 +127,11 @@ import com.android.systemui.qs.shared.style.QsPanelStyle
+ import com.android.systemui.qs.shared.ui.QuickSettings
+ import com.android.systemui.qs.shared.ui.QuickSettings.Elements.SplitShadeQuickSettings
+ import com.android.systemui.qs.ui.composable.QuickSettingsContent
++import com.android.systemui.qs.ui.composable.PanelElement
++import com.android.systemui.qs.ui.composable.PanelElementRows
++import com.android.systemui.qs.ui.composable.panelElementPreviewHeights
++import com.android.systemui.qs.ui.composable.panelElementPreviews
++import com.android.systemui.qs.ui.composable.qsHeaderPreview
+ import com.android.systemui.qs.ui.composable.QuickSettingsShade
+ import com.android.systemui.res.R
+ import com.android.systemui.scene.session.ui.composable.SaveableSession
+@@ -433,16 +441,28 @@ private fun ContentScope.SingleShade(
+                                             modifier = Modifier.sysuiResTag("quick_qs_panel"),
+                                         )
+                                     } else {
+-                                        val top2Specs = remember(viewModel.qsContainerViewModel.tileGridViewModel.tileViewModels) {
+-                                            viewModel.qsContainerViewModel.tileGridViewModel.tileViewModels.take(2).map { it.spec }
+-                                        }
++                                        val folderSpecs =
++                                            if (connectivityFolderEnabled()) connectivityFolderSpecs()
++                                            else emptyList()
++                                        val top2Specs =
++                                            remember(
++                                                viewModel.qsContainerViewModel.tileGridViewModel
++                                                    .tileViewModels,
++                                                folderSpecs,
++                                            ) {
++                                                viewModel.qsContainerViewModel.tileGridViewModel
++                                                    .tileViewModels
++                                                    .filterNot { it.spec.spec in folderSpecs }
++                                                    .take(2)
++                                                    .map { it.spec }
++                                            }
+                                         val folderInHeader =
+                                             connectivityFolderEnabled() &&
+                                                 !qqsShowsMedia &&
+                                                 secureIntSetting(
+                                                     SETTING_QS_FOLDER_POSITION,
+                                                     POSITION_HEADER,
+-                                                ) == POSITION_HEADER &&
++                                                ) <= POSITION_ABOVE_GRID &&
+                                                 secureIntSetting(SETTING_QS_FOLDER_SPAN, 1) < 2
+                                         if (folderInHeader) {
+                                             val tileHeight =
+@@ -486,26 +506,59 @@ private fun ContentScope.SingleShade(
+                         val tileHeight =
+                             dimensionResource(id = R.dimen.common_tile_default_tile_height)
+                         val tileSpacing = dimensionResource(id = R.dimen.qs_tile_margin_vertical)
++                        val folderCompact =
++                            if (secureIntSetting(SETTING_QS_FOLDER_SPAN, 1) < 2) {
++                                tileHeight * 2 + tileSpacing
++                            } else {
++                                null
++                            }
+                         ConnectivityFolder(
+                             tiles = viewModel.qsContainerViewModel.tileGridViewModel.tileViewModels,
+                             modifier =
+                                 Modifier.element(QuickSettings.Elements.ConnectivityFolder)
+                                     .sysuiResTag("quick_qs_panel"),
+-                            compactHeight = tileHeight * 2 + tileSpacing,
++                            compactHeight = folderCompact,
+                         )
+                     },
+                     qqsShowsFolder =
+-                        qqsShowsMedia &&
+-                            connectivityFolderEnabled() &&
+-                            secureIntSetting(SETTING_QS_FOLDER_POSITION, POSITION_HEADER) ==
+-                                POSITION_HEADER &&
+-                            secureIntSetting(SETTING_QS_FOLDER_SPAN, 1) < 2,
++                        connectivityFolderEnabled() &&
++                            secureIntSetting(SETTING_QS_FOLDER_POSITION, POSITION_HEADER) <=
++                                POSITION_ABOVE_GRID,
++                    fillerTiles = { slot ->
++                        var fillerListening by remember { mutableStateOf(false) }
++                        LifecycleStartEffect(Unit) {
++                            fillerListening = true
++                            onStopOrDispose { fillerListening = false }
++                        }
++                        val fillerFolderSpecs =
++                            if (connectivityFolderEnabled()) connectivityFolderSpecs()
++                            else emptyList()
++                        val fillerSpecs =
++                            remember(
++                                viewModel.qsContainerViewModel.tileGridViewModel.tileViewModels,
++                                fillerFolderSpecs,
++                                slot,
++                            ) {
++                                viewModel.qsContainerViewModel.tileGridViewModel.tileViewModels
++                                    .filterNot { it.spec.spec in fillerFolderSpecs }
++                                    .drop(slot * 2)
++                                    .take(2)
++                                    .map { it.spec }
++                            }
++                        TileGrid(
++                            viewModel = viewModel.qsContainerViewModel.tileGridViewModel,
++                            includeSpecs = fillerSpecs,
++                            columnsOverride = 1,
++                            forceLargeTiles = true,
++                            listening = { fillerListening },
++                        )
++                    },
+                     secondaryTiles = {
+                         if (
+                             connectivityFolderEnabled() &&
+                                 !qqsShowsMedia &&
+-                                secureIntSetting(SETTING_QS_FOLDER_POSITION, POSITION_HEADER) ==
+-                                    POSITION_HEADER &&
++                                secureIntSetting(SETTING_QS_FOLDER_POSITION, POSITION_HEADER) <=
++                                    POSITION_ABOVE_GRID &&
+                                 secureIntSetting(SETTING_QS_FOLDER_SPAN, 1) < 2
+                         ) {
+                             var secondaryListening by remember { mutableStateOf(false) }
+@@ -537,18 +590,29 @@ private fun ContentScope.SingleShade(
+                         if (isAlwaysComposedContentVisible()) {
+                             if (viewModel.isQsEnabled && viewModel.showMedia) {
+                                 Element(key = Media.Elements.MediaCarousel, modifier = Modifier) {
+-                                    Media(
+-                                        viewModelFactory = viewModel.mediaViewModelFactory,
+-                                        presentationStyle =
+-                                            if (mediaInRow) {
+-                                                MediaPresentationStyle.Compressed
+-                                            } else {
+-                                                MediaPresentationStyle.Default
+-                                            },
+-                                        behavior = ShadeSceneContentViewModel.qqsMediaUiBehavior,
+-                                        onDismissed = viewModel::onMediaSwipeToDismiss,
+-                                        location = Media.Location.SHADE,
+-                                    )
++                                    if (secureIntSetting(SETTING_QS_MEDIA_STYLE, 0) != 0) {
++                                        PenguinMediaCard(
++                                            viewModelFactory = viewModel.mediaViewModelFactory,
++                                            behavior =
++                                                ShadeSceneContentViewModel.qqsMediaUiBehavior,
++                                            square =
++                                                secureIntSetting(SETTING_QS_MEDIA_SPAN, 1) < 2,
++                                        )
++                                    } else {
++                                        Media(
++                                            viewModelFactory = viewModel.mediaViewModelFactory,
++                                            presentationStyle =
++                                                if (mediaInRow) {
++                                                    MediaPresentationStyle.Compressed
++                                                } else {
++                                                    MediaPresentationStyle.Default
++                                                },
++                                            behavior =
++                                                ShadeSceneContentViewModel.qqsMediaUiBehavior,
++                                            onDismissed = viewModel::onMediaSwipeToDismiss,
++                                            location = Media.Location.SHADE,
++                                        )
++                                    }
+                                 }
+                             }
+                         } else {
+@@ -639,6 +703,7 @@ private val QqsLyingSliderHeight = 56.dp
+ private fun ContentScope.MediaAndQqsLayout(
+     tiles: @Composable () -> Unit,
+     secondaryTiles: @Composable () -> Unit,
++    fillerTiles: @Composable (Int) -> Unit,
+     qqsFolder: @Composable () -> Unit,
+     qqsShowsFolder: Boolean,
+     media: @Composable () -> Unit,
+@@ -684,80 +749,68 @@ private fun ContentScope.MediaAndQqsLayout(
+         modifier = modifierAnimated.fillMaxWidth(),
+         verticalArrangement = spacedBy(dimensionResource(R.dimen.qs_tile_margin_vertical)),
+     ) {
++        val atTop = { position: Int -> position <= POSITION_ABOVE_GRID }
+         val slidersAtTop =
+-            secureIntSetting(SETTING_QS_SLIDERS_POSITION, POSITION_HEADER) <= POSITION_ABOVE_GRID
+-        val slidersStanding = secureIntSetting(SETTING_QS_SLIDERS_SPAN, 1) < 2
++            atTop(secureIntSetting(SETTING_QS_SLIDERS_POSITION, POSITION_HEADER))
++        val slidersSpan = secureIntSetting(SETTING_QS_SLIDERS_SPAN, DEFAULT_SLIDERS_SPAN)
++        val slidersStanding = slidersSpan < 2
++        val folderSpan = secureIntSetting(SETTING_QS_FOLDER_SPAN, 1)
++        val mediaSpan = secureIntSetting(SETTING_QS_MEDIA_SPAN, 1)
+         val standingHeight =
+             dimensionResource(R.dimen.common_tile_default_tile_height) * 2 +
+                 dimensionResource(R.dimen.qs_tile_margin_vertical)
+         val gap = dimensionResource(R.dimen.qs_tile_margin_horizontal)
+-        val slidersInHeader = slidersAtTop && slidersStanding
+-        Row(
+-            modifier = Modifier.fillMaxWidth(),
+-            horizontalArrangement = spacedBy(gap),
+-            verticalAlignment = Alignment.Top,
+-        ) {
+-            Box(modifier = Modifier.weight(1f).height(QqsHeaderHeight)) {
+-                if (showMedia) media() else tiles()
++        val folderOrder = secureIntSetting("qs_connectivity_folder_edit_index", 1)
++        val mediaOrder = secureIntSetting("qs_media_edit_index", 0)
++        val slidersOrder = secureIntSetting("qs_sliders_edit_index", 2)
++        val elements = buildList {
++            if (qqsShowsFolder) {
++                add(PanelElement(folderSpan, folderOrder) { qqsFolder() })
+             }
+-            if (slidersInHeader) {
+-                Element(
+-                    key = QuickSettings.Elements.BrightnessSlider,
+-                    modifier = Modifier.weight(1f),
+-                ) {
+-                    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = spacedBy(gap)) {
+-                        Box(Modifier.weight(1f)) {
+-                            VolumeLayout(
+-                                enable = true,
+-                                verticalCornerRadius = MyUiSliderCorner,
+-                                verticalWidth = null,
+-                                sliderHeight = standingHeight,
+-                            )
+-                        }
+-                        Box(Modifier.weight(1f)) {
+-                            BrightnessLayout(
+-                                enable = true,
+-                                verticalCornerRadius = MyUiSliderCorner,
+-                                verticalWidth = null,
+-                                sliderHeight = standingHeight,
+-                            )
+-                        }
+-                    }
+-                }
+-            } else {
+-                Box(modifier = Modifier.weight(1f)) {
+-                    when {
+-                        qqsShowsFolder -> qqsFolder()
+-                        showMedia -> tiles()
+-                        else -> secondaryTiles()
+-                    }
+-                }
++            if (showMedia) {
++                add(PanelElement(mediaSpan, mediaOrder) { media() })
+             }
+-        }
+-        if (slidersAtTop && !slidersStanding) {
+-            Element(key = QuickSettings.Elements.BrightnessSlider, modifier = Modifier) {
+-                Row(
+-                    modifier = Modifier.fillMaxWidth(),
+-                    horizontalArrangement = spacedBy(gap),
+-                    verticalAlignment = Alignment.CenterVertically,
+-                ) {
+-                    Box(Modifier.weight(1f)) {
+-                        VolumeLayout(
+-                            enable = true,
+-                            horizontal = true,
+-                            sliderHeight = QqsLyingSliderHeight,
+-                        )
+-                    }
+-                    Box(Modifier.weight(1f)) {
+-                        BrightnessLayout(
+-                            enable = true,
+-                            horizontal = true,
+-                            sliderHeight = QqsLyingSliderHeight,
+-                        )
++            if (slidersAtTop) {
++                add(
++                    PanelElement(slidersSpan, slidersOrder, alignEnd = slidersStanding) {
++                        Element(key = QuickSettings.Elements.BrightnessSlider, modifier = Modifier) {
++                            Row(
++                                modifier = Modifier.fillMaxWidth(),
++                                horizontalArrangement = spacedBy(gap),
++                                verticalAlignment = Alignment.CenterVertically,
++                            ) {
++                                Box(Modifier.weight(1f)) {
++                                    BrightnessLayout(
++                                        enable = true,
++                                        horizontal = !slidersStanding,
++                                        verticalCornerRadius = MyUiSliderCorner,
++                                        verticalWidth = null,
++                                        sliderHeight =
++                                            if (slidersStanding) standingHeight
++                                            else QqsLyingSliderHeight,
++                                    )
++                                }
++                                Box(Modifier.weight(1f)) {
++                                    VolumeLayout(
++                                        enable = true,
++                                        horizontal = !slidersStanding,
++                                        verticalCornerRadius = MyUiSliderCorner,
++                                        verticalWidth = null,
++                                        sliderHeight =
++                                            if (slidersStanding) standingHeight
++                                            else QqsLyingSliderHeight,
++                                    )
++                                }
++                            }
++                        }
+                     }
+-                }
++                )
+             }
++        }.sortedBy { it.order }
++        PanelElementRows(elements, gap) { slot ->
++            fillerTiles(slot)
+         }
++        GridAnchor()
+     }
+ }
+ 
+@@ -932,6 +985,12 @@ private fun ContentScope.SplitShade(
+                                                 horizontal =
+                                                     QuickSettingsShade.Dimensions.HorizontalPadding
+                                             ),
++                                        previews =
++                                            panelElementPreviews(qsContainerViewModel),
++                                        previewHeights =
++                                            panelElementPreviewHeights(),
++                                        headerPreview =
++                                            qsHeaderPreview(qsContainerViewModel),
+                                     )
+                                 }
+                             }
+diff --git a/packages/SystemUI/src/com/android/systemui/qs/composefragment/ConnectivityFolder.kt b/packages/SystemUI/src/com/android/systemui/qs/composefragment/ConnectivityFolder.kt
+index 644a8be9da01..639950dd1473 100644
+--- a/packages/SystemUI/src/com/android/systemui/qs/composefragment/ConnectivityFolder.kt
++++ b/packages/SystemUI/src/com/android/systemui/qs/composefragment/ConnectivityFolder.kt
+@@ -90,12 +90,21 @@ const val SETTING_QS_FOLDER_SPAN = "qs_connectivity_folder_span"
+ const val SETTING_QS_FOLDER_POSITION = "qs_connectivity_folder_position"
+ const val SETTING_QS_MEDIA_POSITION = "qs_media_position"
+ 
++@Composable
++fun qsModuleHeight(rows: Int): Dp {
++    val tile = dimensionResource(id = R.dimen.common_tile_default_tile_height)
++    val gap = dimensionResource(id = R.dimen.qs_tile_margin_vertical)
++    return tile * rows + gap * (rows - 1)
++}
++
+ const val POSITION_HEADER = -1
+ const val POSITION_ABOVE_GRID = 0
+ const val POSITION_BELOW_GRID = 1
+ const val SETTING_QS_MEDIA_SPAN = "qs_media_span"
+ const val SETTING_QS_SLIDERS_POSITION = "qs_sliders_position"
+ const val SETTING_QS_SLIDERS_SPAN = "qs_sliders_span"
++
++const val DEFAULT_SLIDERS_SPAN = 2
+ const val SETTING_QS_MEDIA_STYLE = "qs_media_style"
+ 
+ @Composable
+@@ -229,7 +238,7 @@ private fun ConnectivityFolderContent(
+         modifier =
+             modifier
+                 .fillMaxWidth()
+-                .thenIf(compactHeight != null) { Modifier.aspectRatio(1f) }
++                .thenIf(compactHeight != null) { Modifier.height(compactHeight!!) }
+                 .clip(RoundedCornerShape(28.dp))
+                 .background(glassSurface())
+                 .padding(CardPadding),
+@@ -512,14 +521,14 @@ fun connectivityFolderEnabled(): Boolean {
+     val resolver = LocalContext.current.contentResolver
+     var enabled by remember {
+         mutableStateOf(
+-            Settings.Secure.getInt(resolver, SETTING_QS_CONNECTIVITY_FOLDER, 0) != 0
++            Settings.Secure.getInt(resolver, SETTING_QS_CONNECTIVITY_FOLDER, 1) != 0
+         )
+     }
+     DisposableEffect(resolver) {
+         val observer =
+             object : ContentObserver(Handler(Looper.getMainLooper())) {
+                 override fun onChange(selfChange: Boolean) {
+-                    enabled = Settings.Secure.getInt(resolver, SETTING_QS_CONNECTIVITY_FOLDER, 0) != 0
++                    enabled = Settings.Secure.getInt(resolver, SETTING_QS_CONNECTIVITY_FOLDER, 1) != 0
+                 }
+             }
+         resolver.registerContentObserver(
+diff --git a/packages/SystemUI/src/com/android/systemui/qs/composefragment/PenguinMedia.kt b/packages/SystemUI/src/com/android/systemui/qs/composefragment/PenguinMedia.kt
+index 0b76d0f78f59..1a36e0dd351d 100644
+--- a/packages/SystemUI/src/com/android/systemui/qs/composefragment/PenguinMedia.kt
++++ b/packages/SystemUI/src/com/android/systemui/qs/composefragment/PenguinMedia.kt
+@@ -108,11 +108,13 @@ private fun PenguinMediaCardContent(
+         return
+     }
+ 
++    val moduleHeight = qsModuleHeight(2)
++
+     Column(
+         modifier =
+             modifier
+                 .fillMaxWidth()
+-                .thenIf(square) { Modifier.aspectRatio(1f) }
++                .height(moduleHeight)
+                 .clip(RoundedCornerShape(ArtworkCorner))
+                 .background(glassSurface())
+                 .padding(14.dp),
+diff --git a/packages/SystemUI/src/com/android/systemui/qs/composefragment/QSFragmentCompose.kt b/packages/SystemUI/src/com/android/systemui/qs/composefragment/QSFragmentCompose.kt
+index 628c4468c0f5..d86e1b79dd0d 100644
+--- a/packages/SystemUI/src/com/android/systemui/qs/composefragment/QSFragmentCompose.kt
++++ b/packages/SystemUI/src/com/android/systemui/qs/composefragment/QSFragmentCompose.kt
+@@ -1565,6 +1565,7 @@ fun VolumeLayout(
+     verticalWidth: Dp? = 75.dp,
+     vm: QSFragmentComposeViewModel? = null,
+     sliderHeight: Dp,
++    interactive: Boolean = true,
+ ) {
+     val context = LocalContext.current
+     val audioManager = remember(context) {
+@@ -1637,6 +1638,7 @@ fun VolumeLayout(
+                     icon = icon,
+                     modifier = Modifier,
+                     housingHeight = sliderHeight,
++                    interactive = interactive,
+                 )
+             } else {
+                 VerticalSlider(
+@@ -1650,6 +1652,7 @@ fun VolumeLayout(
+                     housingHeight = sliderHeight,
+                     cornerRadius = verticalCornerRadius,
+                     housingWidth = verticalWidth,
++                    interactive = interactive,
+                 )
+             }
+         }
+@@ -1665,6 +1668,7 @@ fun BrightnessLayout(
+     verticalWidth: Dp? = 75.dp,
+     vm: QSFragmentComposeViewModel? = null,
+     sliderHeight: Dp,
++    interactive: Boolean = true,
+ ) {
+     val context = LocalContext.current
+     val contentResolver = context.contentResolver
+@@ -1787,6 +1791,7 @@ fun BrightnessLayout(
+                     icon = icon,
+                     modifier = Modifier,
+                     housingHeight = sliderHeight,
++                    interactive = interactive,
+                 )
+             } else {
+                 VerticalSlider(
+@@ -1800,6 +1805,7 @@ fun BrightnessLayout(
+                     housingHeight = sliderHeight,
+                     cornerRadius = verticalCornerRadius,
+                     housingWidth = verticalWidth,
++                    interactive = interactive,
+                 )
+             }
+         }
+@@ -1816,6 +1822,7 @@ fun VerticalSlider(
+     icon: Painter,
+     modifier: Modifier = Modifier,
+     housingHeight: Dp,
++    interactive: Boolean = true,
+     cornerRadius: Dp? = null,
+     housingWidth: Dp? = 75.dp,
+ ) {
+@@ -1843,7 +1850,9 @@ fun VerticalSlider(
+                     alpha = if (isStockQsStyle) 1f else 0.45f
+                 )
+             )
+-            .sliderGestures(scope, onValueChanged, onValueChangeFinished, onLongPress),
++            .thenIf(interactive) {
++                Modifier.sliderGestures(scope, onValueChanged, onValueChangeFinished, onLongPress)
++            },
+         contentAlignment = Alignment.BottomCenter
+     ) {
+         val fillHeight = housingHeight * value
+@@ -1881,6 +1890,7 @@ fun HorizontalSlider(
+     icon: Painter,
+     modifier: Modifier = Modifier,
+     housingHeight: Dp,
++    interactive: Boolean = true,
+ ) {
+     val iconSize = 22.dp
+     val iconStartPadding = 14.dp
+@@ -1895,12 +1905,14 @@ fun HorizontalSlider(
+                         alpha = if (isStockQsStyle) 1f else 0.45f
+                     )
+                 )
+-                .sliderGesturesHorizontal(
+-                    scope,
+-                    onValueChanged,
+-                    onValueChangeFinished,
+-                    onLongPress,
+-                ),
++                .thenIf(interactive) {
++                    Modifier.sliderGesturesHorizontal(
++                        scope,
++                        onValueChanged,
++                        onValueChangeFinished,
++                        onLongPress,
++                    )
++                },
+         contentAlignment = Alignment.CenterStart,
+     ) {
+         val fillWidth = maxWidth * value
+diff --git a/packages/SystemUI/src/com/android/systemui/qs/panels/ui/compose/EditMode.kt b/packages/SystemUI/src/com/android/systemui/qs/panels/ui/compose/EditMode.kt
+index 964a48457952..3fcefff89a05 100644
+--- a/packages/SystemUI/src/com/android/systemui/qs/panels/ui/compose/EditMode.kt
++++ b/packages/SystemUI/src/com/android/systemui/qs/panels/ui/compose/EditMode.kt
+@@ -43,6 +43,7 @@ import com.android.systemui.qs.panels.ui.viewmodel.AvailableEditActions
+ import com.android.systemui.qs.composefragment.secureIntSetting
+ import com.android.systemui.qs.panels.ui.viewmodel.EditModeViewModel
+ import com.android.systemui.qs.panels.ui.viewmodel.EditTileViewModel
++import androidx.compose.ui.unit.Dp
+ import com.android.systemui.qs.pipeline.shared.TileSpec
+ import com.android.systemui.qs.shared.model.TileCategory
+ import com.android.systemui.qs.shared.style.QsPanelStyle
+@@ -65,6 +66,8 @@ fun TileSpec.panelSpanSetting(): String? =
+ val LocalPanelElementPreview =
+     compositionLocalOf<Map<TileSpec, @Composable () -> Unit>> { emptyMap() }
+ 
++val LocalPanelElementHeight = compositionLocalOf<Map<TileSpec, Dp>> { emptyMap() }
++
+ val LocalQsHeaderPreview = compositionLocalOf<(@Composable () -> Unit)?> { null }
+ 
+ @Composable
+@@ -72,10 +75,12 @@ fun EditMode(
+     viewModel: EditModeViewModel,
+     modifier: Modifier = Modifier,
+     previews: Map<TileSpec, @Composable () -> Unit> = emptyMap(),
++    previewHeights: Map<TileSpec, Dp> = emptyMap(),
+     headerPreview: (@Composable () -> Unit)? = null,
+ ) {
+     CompositionLocalProvider(
+         LocalPanelElementPreview provides previews,
++        LocalPanelElementHeight provides previewHeights,
+         LocalQsHeaderPreview provides headerPreview,
+     ) {
+         EditModeContent(viewModel, modifier)
+@@ -134,8 +139,8 @@ private fun ContentResolver.editIndex(spec: TileSpec) =
+         this,
+         spec.editIndexSetting(),
+         when (spec) {
+-            FOLDER_SPEC -> 0
+-            MEDIA_SPEC -> 1
++            MEDIA_SPEC -> 0
++            FOLDER_SPEC -> 1
+             else -> 2
+         },
+     )
+diff --git a/packages/SystemUI/src/com/android/systemui/qs/panels/ui/compose/EditTileListState.kt b/packages/SystemUI/src/com/android/systemui/qs/panels/ui/compose/EditTileListState.kt
+index 915d072f077d..04356a13a5ac 100644
+--- a/packages/SystemUI/src/com/android/systemui/qs/panels/ui/compose/EditTileListState.kt
++++ b/packages/SystemUI/src/com/android/systemui/qs/panels/ui/compose/EditTileListState.kt
+@@ -40,6 +40,7 @@ class EditTileListState(
+     initialLargeTiles: Set<TileSpec>,
+     val columns: Int,
+     val largeTilesSpan: Int,
++    val fullWidthSpecs: Set<TileSpec> = emptySet(),
+ ) : DragAndDropState {
+     override var draggedCell by mutableStateOf<SizedTile<EditTileViewModel>?>(null)
+         private set
+@@ -115,14 +116,21 @@ class EditTileListState(
+         val fromIndex = indexOf(tileSpec)
+         if (fromIndex != INVALID_INDEX) {
+             val cell = _tiles[fromIndex] as TileGridCell
++            val width = if (toIcon) smallWidth(tileSpec) else largeWidth(tileSpec)
+ 
+-            if (cell.isIcon == toIcon) return
++            if (cell.width == width) return
+ 
+-            _tiles[fromIndex] = cell.copy(width = if (toIcon) 1 else largeTilesSpan)
++            _tiles[fromIndex] = cell.copy(width = width)
+             regenerateGrid(fromIndex)
+         }
+     }
+ 
++    fun smallWidth(tileSpec: TileSpec): Int =
++        if (tileSpec in PANEL_ELEMENT_SPECS) largeTilesSpan else 1
++
++    fun largeWidth(tileSpec: TileSpec): Int =
++        if (tileSpec in PANEL_ELEMENT_SPECS) columns else largeTilesSpan
++
+     override fun isMoving(tileSpec: TileSpec): Boolean {
+         return draggedCell?.let { it.tile.tileSpec == tileSpec } ?: false
+     }
+@@ -217,22 +225,44 @@ class EditTileListState(
+     }
+ 
+     private fun List<EditTileViewModel>.toGridCells(largeTiles: Set<TileSpec>): List<GridCell> {
+-        return map {
++        val sized =
++            map {
+                 SizedTileImpl(
+                     it,
+-                    if (it.tileSpec in PANEL_ELEMENT_SPECS || largeTiles.contains(it.tileSpec)) {
++                    if (it.tileSpec in PANEL_ELEMENT_SPECS) {
++                        if (it.tileSpec in fullWidthSpecs) columns else largeTilesSpan
++                    } else if (largeTiles.contains(it.tileSpec)) {
+                         largeTilesSpan
+                     } else {
+                         1
+                     },
+                 )
+             }
+-            .toGridCells(columns)
++
++        return sized.toRows()
++    }
++
++    private fun List<SizedTile<EditTileViewModel>>.toRows(startingRow: Int = 0): List<GridCell> {
++        val cells = mutableListOf<GridCell>()
++        var row = startingRow
++        var index = 0
++        while (index < size) {
++            val isPanelRun = this[index].tile.tileSpec in PANEL_ELEMENT_SPECS
++            var end = index
++            while (end < size && (this[end].tile.tileSpec in PANEL_ELEMENT_SPECS) == isPanelRun) {
++                end++
++            }
++            val run = subList(index, end).toGridCells(columns, row)
++            cells.addAll(run)
++            row = (run.maxOfOrNull { it.row } ?: (row - 1)) + 1
++            index = end
++        }
++        return cells
+     }
+ 
+     /** Regenerate the list of [GridCell] with their new potential rows */
+     private fun regenerateGrid() {
+-        _tiles.filterIsInstance<TileGridCell>().toGridCells(columns).let {
++        _tiles.filterIsInstance<TileGridCell>().toRows().let {
+             _tiles.clear()
+             _tiles.addAll(it)
+         }
+@@ -245,7 +275,7 @@ class EditTileListState(
+     private fun regenerateGrid(fromIndex: Int) {
+         val fromRow = _tiles[fromIndex].row
+         val (pre, post) = _tiles.partition { it.row < fromRow }
+-        post.filterIsInstance<TileGridCell>().toGridCells(columns, startingRow = fromRow).let {
++        post.filterIsInstance<TileGridCell>().toRows(startingRow = fromRow).let {
+             _tiles.clear()
+             _tiles.addAll(pre)
+             _tiles.addAll(it)
+diff --git a/packages/SystemUI/src/com/android/systemui/qs/panels/ui/compose/infinitegrid/EditTile.kt b/packages/SystemUI/src/com/android/systemui/qs/panels/ui/compose/infinitegrid/EditTile.kt
+index e82813b438a6..a1704b74fed8 100644
+--- a/packages/SystemUI/src/com/android/systemui/qs/panels/ui/compose/infinitegrid/EditTile.kt
++++ b/packages/SystemUI/src/com/android/systemui/qs/panels/ui/compose/infinitegrid/EditTile.kt
+@@ -171,6 +171,7 @@ import com.android.systemui.qs.panels.shared.model.SizedTileImpl
+ import com.android.systemui.qs.panels.ui.compose.DragAndDropState
+ import com.android.systemui.qs.panels.ui.compose.DragType
+ import com.android.systemui.qs.panels.ui.compose.EditTileListState
++import com.android.systemui.qs.panels.ui.compose.LocalPanelElementHeight
+ import com.android.systemui.qs.panels.ui.compose.LocalPanelElementPreview
+ import com.android.systemui.qs.panels.ui.compose.LocalQsHeaderPreview
+ import com.android.systemui.qs.panels.ui.compose.PANEL_ELEMENT_SPECS
+@@ -615,12 +616,21 @@ private fun CurrentTilesGrid(
+ ) {
+     val currentListState by rememberUpdatedState(listState)
+     val totalRows = listState.tiles.lastOrNull()?.row ?: 0
+-    val panelRows =
++    val panelHeights = LocalPanelElementHeight.current
++    val defaultPanelHeight = tileHeight() * 2 + TileArrangementPadding
++    val panelRowsExtra =
+         listState.tiles
+             .filterIsInstance<TileGridCell>()
+             .filter { it.tile.tileSpec in PANEL_ELEMENT_SPECS }
+-            .map { it.row }
+-            .toSet()
++            .groupBy { it.row }
++            .values
++            .fold(0.dp) { acc, cells ->
++                val tallest =
++                    cells.maxOf {
++                        (panelHeights[it.tile.tileSpec] ?: defaultPanelHeight).value
++                    }
++                acc + (tallest.dp - tileHeight()).coerceAtLeast(0.dp)
++            }
+     val totalHeight by
+         animateDpAsState(
+             gridHeight(
+@@ -628,7 +638,7 @@ private fun CurrentTilesGrid(
+                 tileHeight(),
+                 TileArrangementPadding,
+                 CurrentTilesGridPadding,
+-            ) + (tileHeight() + TileArrangementPadding) * panelRows.size,
++            ) + panelRowsExtra,
+             label = "QSEditCurrentTilesGridHeight",
+         )
+     val gridState = rememberLazyGridState()
+@@ -679,7 +689,9 @@ private fun CurrentTilesGrid(
+                     with(resizingOperation) {
+                         // Commit the new size of the tile IF the size changed. Do this check before
+                         // a snapshot is taken to avoid saving an unnecessary snapshot
+-                        val isIcon = spec !in listState.largeTilesSpecs
++                        val isIcon =
++                            if (spec in PANEL_ELEMENT_SPECS) spec !in listState.fullWidthSpecs
++                            else spec !in listState.largeTilesSpecs
+                         if (isIcon != toIcon) {
+                             onEditAction(EditAction.ResizeTile(spec, toIcon))
+                         }
+@@ -948,7 +960,10 @@ private fun LazyGridItemScope.TileGridCell(
+ ) {
+     val stateDescription = stringResource(id = R.string.accessibility_qs_edit_position, index + 1)
+     val tileState by rememberTileState(cell.tile, selectionState)
+-    val resizingState = rememberResizingState(cell.tile.tileSpec, cell.isIcon)
++    val isPanelElement = cell.tile.tileSpec in PANEL_ELEMENT_SPECS
++    val smallSpan = if (isPanelElement) largeTilesSpan else 1
++    val isSmall = cell.width <= smallSpan
++    val resizingState = rememberResizingState(cell.tile.tileSpec, isSmall)
+ 
+     if (tileState == TileState.Selected) {
+         // If the tile is selected, listen to new target values from the draggable anchor to toggle
+@@ -986,7 +1001,7 @@ private fun LazyGridItemScope.TileGridCell(
+             .map { layoutInfo ->
+                 layoutInfo.visibleItemsInfo
+                     .find { it.key == cell.key }
+-                    ?.let { QSDragAnchorsData(it.span == 1, it.size.width) }
++                    ?.let { QSDragAnchorsData(it.span <= smallSpan, it.size.width) }
+             }
+             .filterNotNull()
+             .distinctUntilChanged()
+@@ -1017,9 +1032,13 @@ private fun LazyGridItemScope.TileGridCell(
+         selectionState.unSelect()
+         onRemoveTile(cell.tile.tileSpec)
+     }
+-    val isPanelElement = cell.tile.tileSpec in PANEL_ELEMENT_SPECS
+     val cellHeight =
+-        if (isPanelElement) TileHeight * 2 + TileArrangementPadding else TileHeight
++        if (isPanelElement) {
++            LocalPanelElementHeight.current[cell.tile.tileSpec]
++                ?: (TileHeight * 2 + TileArrangementPadding)
++        } else {
++            TileHeight
++        }
+     InteractiveTileContainer(
+         tileState = tileState,
+         resizingState = resizingState,
+@@ -1084,7 +1103,7 @@ private fun LazyGridItemScope.TileGridCell(
+                             // Don't allow for resizing during placement mode
+                             actions.add(
+                                 CustomAccessibilityAction(toggleSizeLabel) {
+-                                    onResize(FinalResizeOperation(cell.tile.tileSpec, !cell.isIcon))
++                                    onResize(FinalResizeOperation(cell.tile.tileSpec, !isSmall))
+                                     true
+                                 }
+                             )
+@@ -1110,7 +1129,7 @@ private fun LazyGridItemScope.TileGridCell(
+                     color = { colors.background },
+                 )
+                 .keyboardShortcuts(cell.tile.tileSpec, selectionState) {
+-                    onResize(FinalResizeOperation(cell.tile.tileSpec, !cell.isIcon))
++                    onResize(FinalResizeOperation(cell.tile.tileSpec, !isSmall))
+                 }
+                 .thenIf(isSelectable) { selectableModifier }
+         ) {
+diff --git a/packages/SystemUI/src/com/android/systemui/qs/panels/ui/compose/infinitegrid/InfiniteGridLayout.kt b/packages/SystemUI/src/com/android/systemui/qs/panels/ui/compose/infinitegrid/InfiniteGridLayout.kt
+index 0612d95651a4..1e81c89bf9f1 100644
+--- a/packages/SystemUI/src/com/android/systemui/qs/panels/ui/compose/infinitegrid/InfiniteGridLayout.kt
++++ b/packages/SystemUI/src/com/android/systemui/qs/panels/ui/compose/infinitegrid/InfiniteGridLayout.kt
+@@ -40,6 +40,14 @@ import com.android.systemui.qs.panels.shared.model.SizedTileImpl
+ import com.android.systemui.qs.panels.ui.compose.EditTileListState
+ import android.provider.Settings
+ import com.android.systemui.qs.panels.ui.compose.LocalIsPaginatedGrid
++import com.android.systemui.qs.composefragment.DEFAULT_SLIDERS_SPAN
++import com.android.systemui.qs.composefragment.SETTING_QS_FOLDER_SPAN
++import com.android.systemui.qs.composefragment.SETTING_QS_MEDIA_SPAN
++import com.android.systemui.qs.composefragment.SETTING_QS_SLIDERS_SPAN
++import com.android.systemui.qs.composefragment.secureIntSetting
++import com.android.systemui.qs.panels.ui.compose.FOLDER_SPEC
++import com.android.systemui.qs.panels.ui.compose.MEDIA_SPEC
++import com.android.systemui.qs.panels.ui.compose.SLIDERS_SPEC
+ import com.android.systemui.qs.panels.ui.compose.PANEL_ELEMENT_SPECS
+ import com.android.systemui.qs.panels.ui.compose.panelSpanSetting
+ import com.android.systemui.qs.panels.ui.compose.PaginatableGridLayout
+@@ -227,14 +235,22 @@ constructor(
+         val largeTiles by viewModel.iconTilesViewModel.largeTilesState
+ 
+         val editLargeTiles = remember(largeTiles) { largeTiles + PANEL_ELEMENT_SPECS }
++        val fullWidthSpecs = buildSet {
++            if (secureIntSetting(SETTING_QS_FOLDER_SPAN, 1) >= 2) add(FOLDER_SPEC)
++            if (secureIntSetting(SETTING_QS_MEDIA_SPAN, 1) >= 2) add(MEDIA_SPEC)
++            if (secureIntSetting(SETTING_QS_SLIDERS_SPAN, DEFAULT_SLIDERS_SPAN) >= 2) {
++                add(SLIDERS_SPEC)
++            }
++        }
+         val currentTiles by rememberUpdatedState(tiles.filter { it.isCurrent })
+         val listState =
+-            remember(columns, largeTilesSpan) {
++            remember(columns, largeTilesSpan, fullWidthSpecs) {
+                 EditTileListState(
+                     currentTiles,
+                     editLargeTiles,
+                     columns = columns,
+                     largeTilesSpan = largeTilesSpan,
++                    fullWidthSpecs = fullWidthSpecs,
+                 )
+             }
+         LaunchedEffect(currentTiles, editLargeTiles) {
+-- 
+2.43.0
+
