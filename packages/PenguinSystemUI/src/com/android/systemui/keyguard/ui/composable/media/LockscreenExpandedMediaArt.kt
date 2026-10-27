@@ -1,0 +1,264 @@
+/*
+ * Copyright (C) 2026 The PenguinOS Project
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *      http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
+package com.android.systemui.keyguard.ui.composable.media
+
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.foundation.Image
+import androidx.compose.foundation.background
+import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.aspectRatio
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.offset
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
+import androidx.compose.runtime.setValue
+import androidx.compose.runtime.snapshotFlow
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.blur
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawWithContent
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Rect
+import androidx.compose.ui.graphics.BlendMode
+import androidx.compose.ui.graphics.BlurEffect
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.CompositingStrategy
+import androidx.compose.ui.graphics.ImageBitmap
+import androidx.compose.ui.graphics.TileMode
+import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.layout.positionInWindow
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.unit.DpSize
+import androidx.compose.ui.unit.IntOffset
+import androidx.compose.ui.unit.dp
+import com.android.systemui.penguin.CosFeature
+import com.android.systemui.penguin.DepthSubject
+import com.android.systemui.penguin.rememberCosFeature
+import java.io.File
+import kotlin.math.roundToInt
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.distinctUntilChanged
+
+private val CoveredBlur = 40.dp
+
+private val CoverGap = 10.dp
+
+private val CoverMin = 96.dp
+
+private const val TallArtAspect = 3f / 4f
+
+@Composable
+fun LockscreenExpandedMediaArt(
+    alpha: () -> Float,
+    modifier: Modifier = Modifier,
+    covered: () -> Float = { 0f },
+    unlocking: () -> Float = { 0f },
+) {
+    val state = LockscreenMediaExpansion
+    LaunchedEffect(Unit) {
+        snapshotFlow { state.target }
+            .distinctUntilChanged()
+            .collect { target ->
+                val value = if (target) 1f else 0f
+                if (state.animateNextChange) {
+                    state.animateNextChange = false
+                    state.progress.animateTo(value, state.Spec)
+                } else {
+                    state.progress.snapTo(value)
+                }
+            }
+    }
+    LaunchedEffect(Unit) {
+        snapshotFlow { state.fraction > 0f || (state.enabled && state.mediaVisible) }
+            .distinctUntilChanged()
+            .collect { DepthSubject.get()?.setExpandedMediaArtVisible(it) }
+    }
+
+    val latestAlpha by rememberUpdatedState(alpha)
+    LaunchedEffect(Unit) { snapshotFlow { latestAlpha() }.collect { state.lockscreenAlpha = it } }
+
+    val context = LocalContext.current
+    var tallArt by remember(state.track) { mutableStateOf<File?>(null) }
+    var squareArt by remember(state.track) { mutableStateOf<File?>(null) }
+    var tallRendering by remember(state.track) { mutableStateOf(false) }
+    var tallFailed by remember(state.track) { mutableStateOf(false) }
+    val track = state.track
+    val cos = rememberCosFeature(CosFeature.LockscreenMedia)
+    val lookupVisible = state.target && alpha() > 0f
+    LaunchedEffect(state.enabled, state.motionArtEnabled, track, lookupVisible, tallFailed, cos) {
+        if (!state.enabled || !state.motionArtEnabled || track == null) {
+            tallArt = null
+            squareArt = null
+            tallRendering = false
+            return@LaunchedEffect
+        }
+        if (!lookupVisible) return@LaunchedEffect
+        val (artist, title) = track
+        // Retry transient failures while visible, and on the next lockscreen visit.
+        repeat(3) { attempt ->
+            var square = if (cos) MotionArt.find(context, artist, title, MotionArt.Kind.SQUARE) else null
+            val tall =
+                if (square != null || tallFailed) null
+                else MotionArt.find(context, artist, title, MotionArt.Kind.TALL)
+            if (tall == null && square == null && !cos) {
+                square = MotionArt.find(context, artist, title, MotionArt.Kind.SQUARE)
+            }
+            tallArt = tall
+            squareArt = square
+            if (tall != null || square != null) return@LaunchedEffect
+            if (attempt < 2) delay(15_000L * (attempt + 1))
+        }
+    }
+    // Tablets draw the cover far larger than the session's bitmap: use the store's full-size one.
+    var cover by remember(state.track) { mutableStateOf<ImageBitmap?>(null) }
+    LaunchedEffect(state.enabled, state.motionArtEnabled, track, lookupVisible) {
+        if (!state.enabled || !state.motionArtEnabled || track == null || !lookupVisible) {
+            return@LaunchedEffect
+        }
+        if (cover == null) {
+            cover = MotionArt.findCover(context, track.first, track.second)?.asImageBitmap()
+        }
+    }
+    val coverAlpha by animateFloatAsState(if (tallRendering) 0f else 1f, label = "cover")
+
+    var origin by remember { mutableStateOf(Offset.Zero) }
+    var height by remember { mutableStateOf(0f) }
+    var width by remember { mutableStateOf(0f) }
+    Box(
+        modifier
+            .fillMaxSize()
+            .onGloballyPositioned {
+                origin = it.positionInWindow()
+                height = it.size.height.toFloat()
+                width = it.size.width.toFloat()
+            }
+            .graphicsLayer {
+                this.alpha = alpha()
+                val radius = CoveredBlur.toPx() * covered()
+                renderEffect = if (radius > 0f) BlurEffect(radius, radius, TileMode.Clamp) else null
+            }
+    ) {
+        val f = state.fraction
+        val artwork = state.artwork
+        if (f <= 0f || artwork == null) return@Box
+        val density = LocalDensity.current
+        if (cos) {
+            CosImmersiveArt(
+                artwork,
+                squareArt ?: tallArt,
+                Modifier.fillMaxSize().graphicsLayer { this.alpha = f },
+                cover,
+            )
+            return@Box
+        }
+
+        Box(Modifier.fillMaxSize().graphicsLayer { this.alpha = f }) {
+            if (tallArt == null) {
+                Artwork(artwork, Modifier.fillMaxSize().blur(60.dp))
+                Box(Modifier.fillMaxSize().background(Color.Black.copy(alpha = 0.35f)))
+            } else {
+                Box(Modifier.fillMaxSize().background(Color.Black))
+            }
+            tallArt?.let {
+                MotionArtVideo(
+                    it,
+                    Modifier.align(Alignment.TopCenter)
+                        .fillMaxWidth()
+                        .aspectRatio(TallArtAspect)
+                        .graphicsLayer { compositingStrategy = CompositingStrategy.Offscreen }
+                        .drawWithContent {
+                            drawContent()
+                            drawRect(
+                                Brush.verticalGradient(
+                                    0.6f to Color.Black,
+                                    1f to Color.Transparent,
+                                ),
+                                blendMode = BlendMode.DstIn,
+                            )
+                        },
+                    crop = true,
+                    onError = { tallArt = null; tallRendering = false; tallFailed = true },
+                ) {
+                    tallRendering = true
+                }
+            }
+        }
+
+        val gap = with(density) { CoverGap.toPx() }
+        val rise = Offset(0f, unlocking() * height)
+        // Layouts without a reserved art slot (the wide tablet ones) get a cover of their own: in
+        // landscape on the start side, below the player; in portrait centred under it.
+        val slot =
+            if (state.artSlotBounds.isEmpty) {
+                if (width > height) {
+                    Rect(0.06f * width, 0.30f * height, 0.48f * width, 0.86f * height)
+                } else {
+                    Rect(0.12f * width, 0.30f * height, 0.88f * width, 0.66f * height)
+                }.translate(rise)
+            } else {
+                state.artSlotBounds.translate(-origin + rise)
+            }
+        val side = minOf(slot.width, slot.height - gap).coerceAtLeast(0f)
+        val to =
+            Rect(
+                left = slot.left + (slot.width - side) / 2f,
+                top = slot.bottom - gap - side,
+                right = slot.left + (slot.width + side) / 2f,
+                bottom = slot.bottom - gap,
+            )
+        val from = state.thumbnailBounds.translate(-origin + rise)
+        if (slot.isEmpty || from.isEmpty) return@Box
+        val rect =
+            Rect(
+                lerp(from.left, to.left, f),
+                lerp(from.top, to.top, f),
+                lerp(from.right, to.right, f),
+                lerp(from.bottom, to.bottom, f),
+            )
+        val minSide = with(density) { CoverMin.toPx() }
+        val size = with(density) { DpSize(rect.width.toDp(), rect.height.toDp()) }
+        Box(
+            Modifier.offset { IntOffset(rect.left.roundToInt(), rect.top.roundToInt()) }
+                .size(size)
+                .graphicsLayer {
+                    this.alpha = lerp(1f, side.within(minSide * 0.6f, minSide), f) * coverAlpha
+                }
+                .clip(RoundedCornerShape(lerp(10f, 22f, f).dp))
+                .pointerInput(Unit) { detectTapGestures { state.collapse() } }
+        ) {
+            cover?.let {
+                Image(it, null, Modifier.fillMaxSize(), contentScale = ContentScale.Crop)
+            } ?: Artwork(artwork, Modifier.fillMaxSize())
+            squareArt?.let { MotionArtVideo(it, Modifier.fillMaxSize()) }
+        }
+    }
+}
