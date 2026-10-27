@@ -817,7 +817,7 @@ constructor(
     }
 
     private fun setColor(color: Int) {
-        backgroundBaseDrawable.mutate().setTint(color)
+        backgroundBaseDrawable.mutate().setTint(QsFrostedTiles.applyTo(mContext, color))
         backgroundColor = color
     }
 
