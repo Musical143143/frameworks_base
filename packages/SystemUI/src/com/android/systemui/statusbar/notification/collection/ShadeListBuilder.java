@@ -716,7 +716,8 @@ public class ShadeListBuilder implements Dumpable, PipelineDumpable {
                 }
             }
         }
-        if (!NotificationBundleUi.isEnabled() && NotificationStackPeek.isEnabled()) {
+        // Lunaris: stacking runs in both notification UI modes when the setting is on.
+        if (NotificationStackPeek.isEnabled()) {
             stackSameAppNotifs(out);
         }
         Trace.endSection();
