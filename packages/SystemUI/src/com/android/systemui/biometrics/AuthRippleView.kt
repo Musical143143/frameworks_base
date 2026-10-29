@@ -336,6 +336,8 @@ class AuthRippleView(context: Context?, attrs: AttributeSet?) : View(context, at
         val w = width.toFloat().coerceAtLeast(1f)
         val h = height.toFloat().coerceAtLeast(1f)
         val pit = pressRadius(w)
+        // drawPressArea() clips to this radius, so it must be set for style ripples too.
+        pitRadiusPx = pit
         val c = lockScreenColorVal
 
         styleShader.setOrigin(origin.x.toFloat(), origin.y.toFloat())
