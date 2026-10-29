@@ -31,6 +31,7 @@ class FodStyleRippleShader internal constructor() : RuntimeShader(SHADER) {
             uniform float in_style;
             uniform float in_maxr;
             uniform float in_density;
+            uniform float in_reach;
             uniform float3 in_tint;
 
             const float TAU = 6.2831853;
@@ -54,9 +55,12 @@ class FodStyleRippleShader internal constructor() : RuntimeShader(SHADER) {
                 float r = length(v);
                 float ang = atan(v.y, v.x);
                 float t = in_progress;
-                float e = 1.0 - pow(1.0 - t, 3.0);
+                // Same scale as the water effect: the front reaches the far corner at in_reach,
+                // and the style fades out over the last part of the animation.
+                float tf = clamp(t / in_reach, 0.0, 1.0);
+                float e = 1.0 - pow(1.0 - tf, 3.0);
                 float front = e * in_maxr;
-                float life = in_fade * (1.0 - smoothstep(0.65, 1.0, t));
+                float life = in_fade * (1.0 - smoothstep(0.62, 1.0, t));
                 float3 col = in_tint;
                 float a = 0.0;
 
@@ -351,6 +355,10 @@ class FodStyleRippleShader internal constructor() : RuntimeShader(SHADER) {
     var density: Float = 1f
         set(value) { field = value; setFloatUniform("in_density", value) }
 
+    /** Share of the animation where the front reaches [maxRadius], as the water effect does. */
+    var reach: Float = 0.72f
+        set(value) { field = value; setFloatUniform("in_reach", value) }
+
     init {
         setOrigin(0f, 0f)
         setSize(1f, 1f)
@@ -360,5 +368,6 @@ class FodStyleRippleShader internal constructor() : RuntimeShader(SHADER) {
         style = 2f
         maxRadius = 1f
         density = 1f
+        reach = 0.72f
     }
 }

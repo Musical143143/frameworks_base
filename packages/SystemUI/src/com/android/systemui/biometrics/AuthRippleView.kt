@@ -341,15 +341,17 @@ class AuthRippleView(context: Context?, attrs: AttributeSet?) : View(context, at
         styleShader.density = resources.displayMetrics.density
         styleShader.style = style.toFloat()
         styleShader.setTint(Color.red(c) / 255f, Color.green(c) / 255f, Color.blue(c) / 255f)
+        styleShader.reach = WATER_REACH_FRACTION
         styleShader.progress = 0f
         styleShader.fade = 0f
 
+        // Same timing as the water effect: duration, fade-in and reach are shared constants.
         val animator = ValueAnimator.ofFloat(0f, 1f).apply {
-            duration = FOD_STYLE_DURATION_MS
+            duration = WATER_DURATION_MS
             interpolator = Interpolators.LINEAR
             addUpdateListener { a ->
                 styleShader.progress = a.animatedValue as Float
-                styleShader.fade = smooth(a.currentPlayTime.toFloat() / 100f)
+                styleShader.fade = smooth(a.currentPlayTime.toFloat() / WATER_FADE_IN_MS)
                 invalidate()
             }
             addListener(object : AnimatorListenerAdapter() {
@@ -578,4 +580,3 @@ private const val WATER_FULLSCREEN_SPEED_DIAGS_PER_S = 0.42f
 
 private const val FOD_ANIM_FIRST_CUSTOM = 2 // Pulse, Neon ring, Aurora, Sparkle, Shockwave
 private const val FOD_ANIM_LAST_CUSTOM = 31
-private const val FOD_STYLE_DURATION_MS = 1600L
