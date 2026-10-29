@@ -19,7 +19,9 @@ import android.animation.Animator
 import android.animation.AnimatorListenerAdapter
 import android.animation.AnimatorSet
 import android.animation.ValueAnimator
+import android.app.WallpaperManager
 import android.content.Context
+import android.graphics.Bitmap
 import android.graphics.Canvas
 import android.graphics.Color
 import android.graphics.Paint
@@ -417,6 +419,10 @@ class AuthRippleView(context: Context?, attrs: AttributeSet?) : View(context, at
         }
         waterShader.time = 0f
         waterShader.fade = 0f
+        waterShader.lensRadius = 0f
+        waterShader.lensStrength = 0f
+        waterShader.setBackdrop(captureBackdrop(w.toInt(), h.toInt()))
+        val lensCap = w * WATER_LENS_MAX_FRACTION
 
         val animator = ValueAnimator.ofFloat(0f, 1f).apply {
             duration = durationMs
@@ -428,6 +434,9 @@ class AuthRippleView(context: Context?, attrs: AttributeSet?) : View(context, at
                         (durationMs * (1f - WATER_FADE_OUT_START)))
                 waterShader.time = tMs / 1000f
                 waterShader.fade = fadeIn * fadeOut
+                // The lens follows the wave front, grows to a fixed size and then holds.
+                waterShader.lensRadius = minOf(waterShader.speed * tMs / 1000f, lensCap)
+                waterShader.lensStrength = fadeIn * fadeOut
                 invalidate()
             }
             addListener(object : AnimatorListenerAdapter() {
@@ -450,6 +459,32 @@ class AuthRippleView(context: Context?, attrs: AttributeSet?) : View(context, at
         }
         unlockedRippleAnimator = animator
         animator.start()
+    }
+
+    /**
+     * Copy of the wallpaper the lens bends. Built once per ripple. Returns null when no wallpaper
+     * can be read, which turns the lens off and leaves the plain water ring.
+     */
+    private fun captureBackdrop(w: Int, h: Int): Bitmap? {
+        if (w <= 0 || h <= 0) return null
+        return try {
+            val drawable = WallpaperManager.getInstance(context).drawable ?: return null
+            val bmp = Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888)
+            val canvas = Canvas(bmp)
+            // Centre-crop the wallpaper to the screen, the same as the lock screen background.
+            val dw = drawable.intrinsicWidth.coerceAtLeast(1).toFloat()
+            val dh = drawable.intrinsicHeight.coerceAtLeast(1).toFloat()
+            val scale = maxOf(w / dw, h / dh)
+            val ox = (w - dw * scale) / 2f
+            val oy = (h - dh * scale) / 2f
+            canvas.translate(ox, oy)
+            canvas.scale(scale, scale)
+            drawable.setBounds(0, 0, dw.toInt(), dh.toInt())
+            drawable.draw(canvas)
+            bmp
+        } catch (e: Exception) {
+            null
+        }
     }
 
     /** Smoothstep on a 0..1 clamped input. */
@@ -532,6 +567,8 @@ private const val WATER_DURATION_FULLSCREEN_MS = 3600L
 private const val WATER_FADE_IN_MS = 140f
 private const val WATER_FADE_OUT_START = 0.62f
 private const val WATER_WAVELENGTH_DP = 38f
+// Lens size at its largest, as a share of the screen width (the reference grows to ~0.4).
+private const val WATER_LENS_MAX_FRACTION = 0.42f
 private const val WATER_DECAY = 1.0f
 private const val WATER_DECAY_FULLSCREEN = 0.6f
 // Share of the animation the wave front needs to reach the farthest corner.

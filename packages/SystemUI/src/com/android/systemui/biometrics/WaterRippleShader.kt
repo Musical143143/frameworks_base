@@ -53,6 +53,11 @@ class WaterRippleShader internal constructor() : RuntimeShader(SHADER) {
             uniform float in_fullscreen;
             uniform float in_decay;
             uniform float3 in_tint;
+            // Lens: the wallpaper behind the sensor is bent inside the expanding ring.
+            uniform shader in_bg;
+            uniform float in_lens_radius;   // px, current lens radius
+            uniform float in_lens_strength; // 0..1, follows the fade envelope
+            uniform float in_lens_on;       // 1 when a background is bound
 
             const float TAU = 6.2831853;
             const float BOUNCE_KEEP = 0.82;
@@ -144,7 +149,25 @@ class WaterRippleShader internal constructor() : RuntimeShader(SHADER) {
 
                 bright = clamp(bright, 0.0, 1.0);
                 float alpha = bright + dark * (1.0 - bright);
-                return half4(half3(in_tint * bright), half(alpha));
+                float3 ringRgb = in_tint * bright;
+
+                // Lens: magnify the wallpaper toward the centre and add a bright rim, like a
+                // water drop. Outside the lens the ring above is drawn as before.
+                float lensA = 0.0;
+                float3 lensRgb = float3(0.0);
+                if (in_lens_on > 0.5 && in_lens_radius > 1.0 && in_lens_strength > 0.0) {
+                    float x = length(q) / in_lens_radius;
+                    lensA = (1.0 - smoothstep(0.94, 1.0, x)) * in_lens_strength;
+                    float pull = -0.20 * (1.0 - x * x) * in_lens_strength;
+                    half4 bgc = in_bg.eval(p + q * pull);
+                    float rim = exp(-pow((x - 0.94) / 0.06, 2.0)) * in_lens_strength;
+                    lensRgb = mix(float3(bgc.rgb), in_tint, rim * 0.55);
+                    lensRgb = mix(lensRgb, in_tint, rim * 0.25 * (1.0 - x) );
+                }
+                // Premultiplied "over" of the ring on top of the lens layer.
+                float3 outRgb = lensRgb * lensA + ringRgb * (1.0 - lensA);
+                float outA = lensA + alpha * (1.0 - lensA);
+                return half4(half3(outRgb), half(outA));
             }
             """
     }
@@ -201,6 +224,37 @@ class WaterRippleShader internal constructor() : RuntimeShader(SHADER) {
             setFloatUniform("in_decay", value)
         }
 
+    /** Wallpaper (or any backdrop) bent inside the lens. Null turns the lens off. */
+    fun setBackdrop(bitmap: android.graphics.Bitmap?) {
+        if (bitmap == null) {
+            setFloatUniform("in_lens_on", 0f)
+            return
+        }
+        setInputShader(
+            "in_bg",
+            android.graphics.BitmapShader(
+                bitmap,
+                android.graphics.Shader.TileMode.CLAMP,
+                android.graphics.Shader.TileMode.CLAMP
+            )
+        )
+        setFloatUniform("in_lens_on", 1f)
+    }
+
+    /** Lens radius in px (follows the wave front, capped by the caller). */
+    var lensRadius: Float = 0f
+        set(value) {
+            field = value
+            setFloatUniform("in_lens_radius", value)
+        }
+
+    /** 0..1 lens opacity and bend strength. */
+    var lensStrength: Float = 0f
+        set(value) {
+            field = value
+            setFloatUniform("in_lens_strength", value)
+        }
+
     /** Colour of the highlights (linear-ish sRGB, 0..1). */
     fun setTint(r: Float, g: Float, b: Float) {
         setFloatUniform("in_tint", r, g, b)
@@ -216,5 +270,18 @@ class WaterRippleShader internal constructor() : RuntimeShader(SHADER) {
         fullscreen = false
         decay = 1.0f
         setTint(0.93f, 0.97f, 1.0f)
+        lensRadius = 0f
+        lensStrength = 0f
+        // A child shader must always be bound; a 1x1 transparent bitmap keeps the lens off.
+        setBackdrop(null)
+        setInputShader(
+            "in_bg",
+            android.graphics.BitmapShader(
+                android.graphics.Bitmap.createBitmap(1, 1,
+                    android.graphics.Bitmap.Config.ARGB_8888),
+                android.graphics.Shader.TileMode.CLAMP,
+                android.graphics.Shader.TileMode.CLAMP
+            )
+        )
     }
 }
