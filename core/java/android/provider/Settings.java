@@ -7310,6 +7310,37 @@ public final class Settings {
         public static final String STATUS_BAR_CUSTOM_HEADER_HEIGHT = "status_bar_custom_header_height";
 
         /**
+         * Header image zoom in percent (100 = fit to the header, up to 300).
+         * @hide
+         */
+        public static final String STATUS_BAR_CUSTOM_HEADER_ZOOM = "status_bar_custom_header_zoom";
+
+        /**
+         * Header image horizontal focal point, 0-100 (50 = centred).
+         * @hide
+         */
+        public static final String STATUS_BAR_CUSTOM_HEADER_POS_X = "status_bar_custom_header_pos_x";
+
+        /**
+         * Header image vertical focal point, 0-100 (50 = centred).
+         * @hide
+         */
+        public static final String STATUS_BAR_CUSTOM_HEADER_POS_Y = "status_bar_custom_header_pos_y";
+
+        /**
+         * Header image source: "local" (static, file or daylight providers) or "online".
+         * @hide
+         */
+        public static final String STATUS_BAR_CUSTOM_HEADER_SOURCE = "status_bar_custom_header_source";
+
+        /**
+         * URL of an online header index: a JSON array of image URLs, or {"images": [...]}.
+         * @hide
+         */
+        public static final String STATUS_BAR_CUSTOM_HEADER_ONLINE_URL =
+                "status_bar_custom_header_online_url";
+
+        /**
          * @hide
          */
         public static final String LOCKSCREEN_WEATHER_ENABLED = "lockscreen_weather_enabled";

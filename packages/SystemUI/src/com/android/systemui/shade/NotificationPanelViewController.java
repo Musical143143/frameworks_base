@@ -115,6 +115,7 @@ import com.android.systemui.bouncer.domain.interactor.AlternateBouncerInteractor
 import com.android.systemui.classifier.Classifier;
 import com.android.systemui.classifier.FalsingCollector;
 import com.android.systemui.common.domain.interactor.SysUIStateDisplaysInteractor;
+import com.android.systemui.crdroid.header.HeaderImageCrop;
 import com.android.systemui.crdroid.header.StatusBarHeaderMachine;
 import com.android.systemui.dagger.SysUISingleton;
 import com.android.systemui.dagger.qualifiers.DisplayId;
@@ -921,6 +922,11 @@ public final class NotificationPanelViewController implements
         mAlternateBouncerInteractor = alternateBouncerInteractor;
         mQsHeaderLayout = mView.requireViewById(R.id.layout_header);
         mQsHeaderImageView = mView.requireViewById(R.id.qs_header_image_view);
+        mQsHeaderImageView.addOnLayoutChangeListener((v, l, t, r, b, ol, ot, or, ob) -> {
+            if (r - l != or - ol || b - t != ob - ot) {
+                applyHeaderCrop();
+            }
+        });
         mStatusBarHeaderMachine = new StatusBarHeaderMachine(context);
         dumpManager.registerDumpable(this);
     }
@@ -4750,6 +4756,7 @@ public final class NotificationPanelViewController implements
 
         if (dw instanceof Animatable) {
             mQsHeaderImageView.setImageDrawable(dw);
+            applyHeaderCrop();
             return;
         }
 
@@ -4763,5 +4770,11 @@ public final class NotificationPanelViewController implements
         } else {
             mQsHeaderImageView.setImageDrawable(dw);
         }
+        applyHeaderCrop();
+    }
+
+    /** Applies the user's header zoom and focal point to the header image. */
+    private void applyHeaderCrop() {
+        HeaderImageCrop.apply(mQsHeaderImageView, mView.getContext());
     }
 }

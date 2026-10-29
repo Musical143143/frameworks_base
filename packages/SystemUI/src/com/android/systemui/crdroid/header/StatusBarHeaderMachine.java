@@ -130,6 +130,15 @@ public class StatusBarHeaderMachine {
             mContext.getContentResolver().registerContentObserver(Settings.System.getUriFor(
                     Settings.System.STATUS_BAR_FILE_HEADER_IMAGE),
                     false, this, UserHandle.USER_ALL);
+            for (String key : new String[] {
+                    Settings.System.STATUS_BAR_CUSTOM_HEADER_ZOOM,
+                    Settings.System.STATUS_BAR_CUSTOM_HEADER_POS_X,
+                    Settings.System.STATUS_BAR_CUSTOM_HEADER_POS_Y,
+                    Settings.System.STATUS_BAR_CUSTOM_HEADER_SOURCE,
+                    Settings.System.STATUS_BAR_CUSTOM_HEADER_ONLINE_URL}) {
+                mContext.getContentResolver().registerContentObserver(
+                        Settings.System.getUriFor(key), false, this, UserHandle.USER_ALL);
+            }
         }
 
         void unobserve() {
@@ -145,8 +154,14 @@ public class StatusBarHeaderMachine {
             final boolean customHeader = Settings.System.getIntForUser(mContext.getContentResolver(),
                     Settings.System.STATUS_BAR_CUSTOM_HEADER, 0,
                     UserHandle.USER_CURRENT) == 1;
-            if (customHeader && uri.equals(Settings.System.getUriFor(
-                    Settings.System.STATUS_BAR_CUSTOM_HEADER_SHADOW))) {
+            if (customHeader && (uri.equals(Settings.System.getUriFor(
+                    Settings.System.STATUS_BAR_CUSTOM_HEADER_SHADOW))
+                    || uri.equals(Settings.System.getUriFor(
+                    Settings.System.STATUS_BAR_CUSTOM_HEADER_ZOOM))
+                    || uri.equals(Settings.System.getUriFor(
+                    Settings.System.STATUS_BAR_CUSTOM_HEADER_POS_X))
+                    || uri.equals(Settings.System.getUriFor(
+                    Settings.System.STATUS_BAR_CUSTOM_HEADER_POS_Y)))) {
                 doRefreshStatusHeaderObservers();
             } else {
                 IStatusBarHeaderProvider provider = getCurrentProvider();
@@ -173,6 +188,9 @@ public class StatusBarHeaderMachine {
         mCurrentProviderName = mDefaultProviderName;
         addProvider(new StaticHeaderProvider(context));
         addProvider(new FileHeaderProvider(context));
+        OnlineHeaderProvider online = new OnlineHeaderProvider(context);
+        online.setOnLoadedListener(() -> doUpdateStatusHeaderObservers(true));
+        addProvider(online);
         mSettingsObserver.observe();
     }
 
