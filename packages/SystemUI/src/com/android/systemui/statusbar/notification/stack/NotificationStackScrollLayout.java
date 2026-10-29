@@ -716,6 +716,7 @@ public class NotificationStackScrollLayout
         mDebugLines = mFeatureFlags.isEnabled(Flags.NSSL_DEBUG_LINES);
         mDebugRemoveAnimation = mFeatureFlags.isEnabled(Flags.NSSL_DEBUG_REMOVE_ANIMATION);
         NotificationStackPeek.init(context);
+        OxygenStackStyle.init(context);
         mSectionsManager = Dependency.get(NotificationSectionsManager.class);
         mSectionsManager.initialize(this);
         mSections = mSectionsManager.createSectionsForBuckets();
