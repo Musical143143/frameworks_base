@@ -33,6 +33,10 @@ class FodStyleRippleShader internal constructor() : RuntimeShader(SHADER) {
             uniform float in_density;
             uniform float in_reach;
             uniform float3 in_tint;
+            // Lens: the wallpaper behind the sensor is bent inside the expanding front,
+            // the same as the water effect.
+            uniform shader in_bg;
+            uniform float in_lens_on;
 
             const float TAU = 6.2831853;
             const float PI = 3.14159265;
@@ -329,7 +333,23 @@ class FodStyleRippleShader internal constructor() : RuntimeShader(SHADER) {
                     col = mix(float3(0.6, 0.5, 1.0), float3(1.0, 0.8, 0.9), garm);
                 }
 
-                return pack(col, a * life);
+                float ringA = clamp(a * life, 0.0, 1.0);
+                float3 ringRgb = col * ringA;
+
+                float lensA = 0.0;
+                float3 lensRgb = float3(0.0);
+                if (in_lens_on > 0.5 && life > 0.0 && front > 1.0) {
+                    float lensR = min(front, in_size.x * 0.42);
+                    float x = r / lensR;
+                    lensA = (1.0 - smoothstep(0.94, 1.0, x)) * life;
+                    float pull = -0.20 * (1.0 - x * x) * life;
+                    half4 bgc = in_bg.eval(p + v * pull);
+                    float rim = exp(-pow((x - 0.94) / 0.06, 2.0)) * life;
+                    lensRgb = mix(float3(bgc.rgb), col, rim * 0.55);
+                }
+                float3 outRgb = lensRgb * lensA + ringRgb * (1.0 - lensA);
+                float outA = lensA + ringA * (1.0 - lensA);
+                return half4(half3(outRgb), half(clamp(outA, 0.0, 1.0)));
             }
             """
     }
@@ -359,6 +379,23 @@ class FodStyleRippleShader internal constructor() : RuntimeShader(SHADER) {
     var reach: Float = 0.72f
         set(value) { field = value; setFloatUniform("in_reach", value) }
 
+    /** Wallpaper (or any backdrop) bent inside the lens. Null turns the lens off. */
+    fun setBackdrop(bitmap: android.graphics.Bitmap?) {
+        if (bitmap == null) {
+            setFloatUniform("in_lens_on", 0f)
+            return
+        }
+        setInputShader(
+            "in_bg",
+            android.graphics.BitmapShader(
+                bitmap,
+                android.graphics.Shader.TileMode.CLAMP,
+                android.graphics.Shader.TileMode.CLAMP
+            )
+        )
+        setFloatUniform("in_lens_on", 1f)
+    }
+
     init {
         setOrigin(0f, 0f)
         setSize(1f, 1f)
@@ -369,5 +406,16 @@ class FodStyleRippleShader internal constructor() : RuntimeShader(SHADER) {
         maxRadius = 1f
         density = 1f
         reach = 0.72f
+        // A child shader must always be bound; a 1x1 transparent bitmap keeps the lens off.
+        setInputShader(
+            "in_bg",
+            android.graphics.BitmapShader(
+                android.graphics.Bitmap.createBitmap(1, 1,
+                    android.graphics.Bitmap.Config.ARGB_8888),
+                android.graphics.Shader.TileMode.CLAMP,
+                android.graphics.Shader.TileMode.CLAMP
+            )
+        )
+        setBackdrop(null)
     }
 }

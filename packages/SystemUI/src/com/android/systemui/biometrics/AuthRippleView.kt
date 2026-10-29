@@ -344,6 +344,7 @@ class AuthRippleView(context: Context?, attrs: AttributeSet?) : View(context, at
         styleShader.reach = WATER_REACH_FRACTION
         styleShader.progress = 0f
         styleShader.fade = 0f
+        styleShader.setBackdrop(captureBackdrop(w.toInt(), h.toInt()))
 
         // Same timing as the water effect: duration, fade-in and reach are shared constants.
         val animator = ValueAnimator.ofFloat(0f, 1f).apply {
