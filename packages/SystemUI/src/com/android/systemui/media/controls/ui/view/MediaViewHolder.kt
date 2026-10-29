@@ -107,7 +107,7 @@ class MediaViewHolder constructor(itemView: View) {
         val waveformEnabled = Settings.System.getInt(
             player.context.contentResolver,
             Settings.System.MEDIA_WAVEFORM_SEEKBAR,
-            0
+            1 // Waveform seek bar is on by default, as in the reference video.
         ) == 1
 
         if (waveformEnabled && seekBar !is WaveformSeekBar) {
