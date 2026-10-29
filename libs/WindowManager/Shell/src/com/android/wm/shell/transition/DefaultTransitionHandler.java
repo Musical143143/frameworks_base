@@ -73,6 +73,7 @@ import static com.android.wm.shell.transition.TransitionAnimationHelper.isCovere
 import static com.android.wm.shell.transition.TransitionAnimationHelper.loadAttributeAnimation;
 
 import android.animation.Animator;
+import android.animation.AnimatorSet;
 import android.animation.ValueAnimator;
 import android.annotation.ColorInt;
 import android.annotation.NonNull;
@@ -664,9 +665,12 @@ public class DefaultTransitionHandler implements Transitions.TransitionHandler {
             // now start animations. they are started on another thread, so we have to post them
             // *after* applying the startTransaction
             mAnimExecutor.execute(() -> {
-                for (int i = 0; i < animations.size(); ++i) {
-                    animations.get(i).start();
-                }
+                // Start the window, icon/thumbnail zoom and background animators on one shared
+                // AnimatorSet timeline, so they all begin on the same frame.
+                // Each animator keeps its own listeners, so cancel and merge still reach them.
+                final AnimatorSet together = new AnimatorSet();
+                together.playTogether(new ArrayList<>(animations));
+                together.start();
             });
         }
 
