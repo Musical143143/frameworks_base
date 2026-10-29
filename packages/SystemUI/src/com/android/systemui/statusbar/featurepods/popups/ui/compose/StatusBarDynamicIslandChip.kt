@@ -168,12 +168,13 @@ fun StatusBarDynamicIslandChip(
             .coerceAtLeast(56.dp)
 
     val collapseState = rememberDynamicIslandCollapseState(viewModel.isPopupShown)
-    // One-shot silver sheen that sweeps across the pill when a screen recording starts,
-    // as in the reference video.
-    val isRecordPopup = viewModel.popupContent is PopupContentModel.ScreenRecord
+    // One-shot silver sheen that sweeps across the pill whenever an island activity appears or
+    // changes type, as in the reference video. Keyed on the content type, not on each update,
+    // so ticking timers or progress do not replay it.
+    val activityType = viewModel.popupContent?.javaClass
     val sheenProgress = remember { Animatable(1f) }
-    LaunchedEffect(isRecordPopup) {
-        if (isRecordPopup) {
+    LaunchedEffect(activityType) {
+        if (activityType != null) {
             sheenProgress.snapTo(0f)
             sheenProgress.animateTo(1f, animationSpec = tween(durationMillis = 900))
         }
