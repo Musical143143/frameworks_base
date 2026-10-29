@@ -130,19 +130,38 @@ public final class NotificationStackPeek {
         final int baseColor = row.getBackgroundColorWithoutTint();
         final int bottom = row.getActualHeight() - row.getClipBottomAmount();
 
+        final float density = row.getResources().getDisplayMetrics().density;
+        final int r = android.graphics.Color.red(baseColor);
+        final int g = android.graphics.Color.green(baseColor);
+        final int b = android.graphics.Color.blue(baseColor);
+        final int baseAlpha = android.graphics.Color.alpha(baseColor);
+
         canvas.save();
         canvas.clipRect(0f, bottom, row.getWidth(), bottom + step * layers + radius);
         for (int i = layers; i >= 1; i--) {
-            // Further layers are slightly darker and more transparent.
-            final float fade = 1f - 0.25f * i;
-            final int a = Math.round(android.graphics.Color.alpha(baseColor) * fade);
-            paint.setColor((baseColor & 0x00FFFFFF) | (a << 24));
+            // Glass stack: each deeper layer is a little more transparent and a little lighter,
+            // with a faint highlight along its top edge, as in the stacked notification centre.
+            final float fade = 1f - 0.18f * i;
+            final int a = Math.round(baseAlpha * fade);
+            final float lift = 0.06f * i;
+            final int lr = Math.round(r + (255 - r) * lift);
+            final int lg = Math.round(g + (255 - g) * lift);
+            final int lb = Math.round(b + (255 - b) * lift);
             final float left = inset * i;
             final float right = row.getWidth() - inset * i;
             // Start well above the bottom edge so the rounded top is hidden behind the row.
             tmp.set(left, bottom - radius, right, bottom + step * i);
+
+            paint.setStyle(android.graphics.Paint.Style.FILL);
+            paint.setColor(android.graphics.Color.argb(a, lr, lg, lb));
+            canvas.drawRoundRect(tmp, radius, radius, paint);
+
+            paint.setStyle(android.graphics.Paint.Style.STROKE);
+            paint.setStrokeWidth(Math.max(1f, density));
+            paint.setColor(android.graphics.Color.argb(Math.round(a * 0.22f), 255, 255, 255));
             canvas.drawRoundRect(tmp, radius, radius, paint);
         }
+        paint.setStyle(android.graphics.Paint.Style.FILL);
         canvas.restore();
     }
 }
