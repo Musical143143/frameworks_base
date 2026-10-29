@@ -120,6 +120,7 @@ public class QSPanel extends LinearLayout implements Tunable {
 
     public QSPanel(Context context, AttributeSet attrs) {
         super(context, attrs);
+        QsOneUiStyle.init(context);
         mUsingMediaPlayer = useQsMediaPlayer(context);
         mMediaTotalBottomMargin = getResources().getDimensionPixelSize(
                 R.dimen.quick_settings_bottom_margin_media);
