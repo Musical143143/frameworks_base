@@ -4635,6 +4635,9 @@ public class ExpandableNotificationRow extends ActivatableNotificationView
         }
         super.dispatchDraw(canvas);
         canvas.restore();
+        if (getParent() instanceof NotificationStackScrollLayout && !mExpandAnimationRunning) {
+            NotificationStackPeek.drawCountBadge(this, canvas, mStackPeekPaint);
+        }
     }
 
     @Override

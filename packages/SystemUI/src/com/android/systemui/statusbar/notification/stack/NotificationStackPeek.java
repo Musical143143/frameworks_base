@@ -111,6 +111,44 @@ public final class NotificationStackPeek {
                 .getDimensionPixelSize(R.dimen.notification_stack_peek_step);
     }
 
+    private static android.graphics.Paint sBadgeTextPaint;
+
+    /**
+     * Draws the white count badge on a collapsed stack's avatar, like the stacked notification
+     * centre. Only for summaries with two or more notifications, and only with the stack setting
+     * on. Drawn after the row content so it sits on top.
+     */
+    public static void drawCountBadge(ExpandableNotificationRow row, Canvas canvas, Paint paint) {
+        if (!sEnabled || !row.isSummaryWithChildren() || row.isChildInGroup() || row.isBundle()
+                || row.isGroupExpanded() || row.isRemoved() || row.getWidth() == 0) {
+            return;
+        }
+        final List<ExpandableNotificationRow> children = row.getAttachedChildren();
+        final int count = children == null ? 0 : children.size();
+        if (count < 2) {
+            return;
+        }
+        final float density = row.getResources().getDisplayMetrics().density;
+        // Top-left of the avatar, where the badge sits in the stacked notification centre.
+        final float cx = 26f * density;
+        final float cy = 22f * density;
+        final float radius = 9f * density;
+
+        paint.setStyle(android.graphics.Paint.Style.FILL);
+        paint.setColor(android.graphics.Color.WHITE);
+        canvas.drawCircle(cx, cy, radius, paint);
+
+        if (sBadgeTextPaint == null) {
+            sBadgeTextPaint = new android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG);
+            sBadgeTextPaint.setTextAlign(android.graphics.Paint.Align.CENTER);
+            sBadgeTextPaint.setFakeBoldText(true);
+        }
+        sBadgeTextPaint.setColor(0xFF1C1C1E);
+        sBadgeTextPaint.setTextSize(11f * density);
+        final float baseline = cy - (sBadgeTextPaint.descent() + sBadgeTextPaint.ascent()) / 2f;
+        canvas.drawText(String.valueOf(count), cx, baseline, sBadgeTextPaint);
+    }
+
     /**
      * Draws the peek layers below {@code row}. Must be called before the row's own content is
      * drawn so the row covers the top of the layers.
