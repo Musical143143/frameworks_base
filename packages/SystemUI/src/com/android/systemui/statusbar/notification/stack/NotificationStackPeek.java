@@ -168,6 +168,13 @@ public final class NotificationStackPeek {
         final int baseColor = row.getBackgroundColorWithoutTint();
         final int bottom = row.getActualHeight() - row.getClipBottomAmount();
 
+        if (OxygenStackStyle.isEnabled()) {
+            final float density = row.getResources().getDisplayMetrics().density;
+            OxygenStackStyle.drawLayers(canvas, paint, tmp, radius, density, baseColor, layers,
+                    inset, step, row.getWidth(), bottom);
+            return;
+        }
+
         final float density = row.getResources().getDisplayMetrics().density;
         final int r = android.graphics.Color.red(baseColor);
         final int g = android.graphics.Color.green(baseColor);

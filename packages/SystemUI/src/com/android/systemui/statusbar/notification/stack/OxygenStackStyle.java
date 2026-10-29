@@ -17,6 +17,12 @@
 package com.android.systemui.statusbar.notification.stack;
 
 import android.content.Context;
+import android.graphics.Canvas;
+import android.graphics.Color;
+import android.graphics.LinearGradient;
+import android.graphics.Paint;
+import android.graphics.RectF;
+import android.graphics.Shader;
 import android.database.ContentObserver;
 import android.os.Handler;
 import android.os.Looper;
@@ -26,7 +32,6 @@ import android.provider.Settings;
 /**
  * Gate for the Oxygen-style per-app notification stacks (Settings &gt; Notifications &gt;
  * Oxygen-style stacks). Off by default, so the current shade is unchanged until it is turned on.
- * The card layout that this gate controls is not drawn yet.
  */
 public final class OxygenStackStyle {
 
@@ -64,5 +69,39 @@ public final class OxygenStackStyle {
     /** Whether the Oxygen-style stacks are turned on. Always false until the user enables it. */
     public static boolean isEnabled() {
         return sEnabled;
+    }
+
+    /**
+     * Draws the stacked card layers under a collapsed app group: rounded glass cards with a
+     * translucent gradient fill (lighter at the top) and a thin light border, each one a little
+     * narrower and lower than the one above. Drawn only when {@link #isEnabled()} is true.
+     */
+    public static void drawLayers(Canvas canvas, Paint paint, RectF rect, float radius,
+            float density, int baseColor, int layers, float inset, float step, float width,
+            float bottom) {
+        final int baseAlpha = Color.alpha(baseColor);
+        final int r = Color.red(baseColor);
+        final int g = Color.green(baseColor);
+        final int b = Color.blue(baseColor);
+        for (int i = layers; i >= 1; i--) {
+            final float left = inset * i;
+            final float right = width - inset * i;
+            rect.set(left, bottom - radius, right, bottom + step * i);
+
+            final float fade = 1f - 0.18f * i;
+            final int top = Color.argb(Math.round(baseAlpha * fade), r, g, b);
+            final int lower = Color.argb(Math.round(baseAlpha * fade * 0.7f), r, g, b);
+            paint.setStyle(Paint.Style.FILL);
+            paint.setShader(new LinearGradient(0, rect.top, 0, rect.bottom,
+                    top, lower, Shader.TileMode.CLAMP));
+            canvas.drawRoundRect(rect, radius, radius, paint);
+            paint.setShader(null);
+
+            paint.setStyle(Paint.Style.STROKE);
+            paint.setStrokeWidth(Math.max(1f, density));
+            paint.setColor(Color.argb(Math.round(baseAlpha * fade * 0.35f), 255, 255, 255));
+            canvas.drawRoundRect(rect, radius, radius, paint);
+        }
+        paint.setStyle(Paint.Style.FILL);
     }
 }
