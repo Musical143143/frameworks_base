@@ -56,6 +56,7 @@ class AuthRippleView(context: Context?, attrs: AttributeSet?) : View(context, at
     private var drawDwell: Boolean = false
     private var drawRipple: Boolean = false
     private var drawWater: Boolean = false
+    private var pitRadiusPx: Float = 0f
     private var drawStyle: Boolean = false
 
     private var lockScreenColorVal = Color.WHITE
@@ -322,22 +323,24 @@ class AuthRippleView(context: Context?, attrs: AttributeSet?) : View(context, at
             context.contentResolver, SETTING_FOD_UNLOCK_ANIM, 0, UserHandle.USER_CURRENT
         )
 
+    /**
+     * Radius of the press area around the sensor. The effects stay inside it, as in the reference
+     * video, instead of spreading over the whole screen.
+     */
+    private fun pressRadius(w: Float): Float =
+        maxOf(w * FOD_PRESS_RADIUS_FRACTION, FOD_PRESS_RADIUS_MIN_DP * resources.displayMetrics.density)
+
     /** Lunaris extra styles (2..6), drawn by [FodStyleRippleShader]. */
     private fun startStyleRipple(style: Int, onAnimationEnd: Runnable?) {
         val highFrameRate = readBool(SETTING_FOD_WATER_HFR, true)
         val w = width.toFloat().coerceAtLeast(1f)
         val h = height.toFloat().coerceAtLeast(1f)
-        val farthest = maxOf(
-            Math.hypot(origin.x.toDouble(), origin.y.toDouble()),
-            Math.hypot((w - origin.x).toDouble(), origin.y.toDouble()),
-            Math.hypot(origin.x.toDouble(), (h - origin.y).toDouble()),
-            Math.hypot((w - origin.x).toDouble(), (h - origin.y).toDouble())
-        ).toFloat()
+        val pit = pressRadius(w)
         val c = lockScreenColorVal
 
         styleShader.setOrigin(origin.x.toFloat(), origin.y.toFloat())
         styleShader.setSize(w, h)
-        styleShader.maxRadius = farthest
+        styleShader.maxRadius = pit
         styleShader.density = resources.displayMetrics.density
         styleShader.style = style.toFloat()
         styleShader.setTint(Color.red(c) / 255f, Color.green(c) / 255f, Color.blue(c) / 255f)
@@ -402,12 +405,18 @@ class AuthRippleView(context: Context?, attrs: AttributeSet?) : View(context, at
         val h = height.toFloat().coerceAtLeast(1f)
         val density = resources.displayMetrics.density
         val durationMs = if (fullscreen) WATER_DURATION_FULLSCREEN_MS else WATER_DURATION_MS
-        val farthest = maxOf(
-            Math.hypot(origin.x.toDouble(), origin.y.toDouble()),
-            Math.hypot((w - origin.x).toDouble(), origin.y.toDouble()),
-            Math.hypot(origin.x.toDouble(), (h - origin.y).toDouble()),
-            Math.hypot((w - origin.x).toDouble(), (h - origin.y).toDouble())
-        ).toFloat()
+        // Press area: the wave stops at this radius (or the far corner in fullscreen mode).
+        val reachRadius = if (fullscreen) {
+            maxOf(
+                Math.hypot(origin.x.toDouble(), origin.y.toDouble()),
+                Math.hypot((w - origin.x).toDouble(), origin.y.toDouble()),
+                Math.hypot(origin.x.toDouble(), (h - origin.y).toDouble()),
+                Math.hypot((w - origin.x).toDouble(), (h - origin.y).toDouble())
+            ).toFloat()
+        } else {
+            pressRadius(w)
+        }
+        pitRadiusPx = reachRadius
 
         waterShader.setOrigin(origin.x.toFloat(), origin.y.toFloat())
         waterShader.setSize(w, h)
@@ -418,14 +427,14 @@ class AuthRippleView(context: Context?, attrs: AttributeSet?) : View(context, at
         waterShader.speed = if (fullscreen) {
             Math.hypot(w.toDouble(), h.toDouble()).toFloat() * WATER_FULLSCREEN_SPEED_DIAGS_PER_S
         } else {
-            farthest / (durationMs / 1000f * WATER_REACH_FRACTION)
+            reachRadius / (durationMs / 1000f * WATER_REACH_FRACTION)
         }
         waterShader.time = 0f
         waterShader.fade = 0f
         waterShader.lensRadius = 0f
         waterShader.lensStrength = 0f
         waterShader.setBackdrop(captureBackdrop(w.toInt(), h.toInt()))
-        val lensCap = w * WATER_LENS_MAX_FRACTION
+        val lensCap = if (fullscreen) w * WATER_LENS_MAX_FRACTION else reachRadius * FOD_LENS_OF_PRESS
 
         val animator = ValueAnimator.ofFloat(0f, 1f).apply {
             duration = durationMs
@@ -490,6 +499,16 @@ class AuthRippleView(context: Context?, attrs: AttributeSet?) : View(context, at
         }
     }
 
+    /** Paints only the square around the press area, clipped to the view. */
+    private fun drawPressArea(canvas: Canvas, paint: Paint) {
+        val r = pitRadiusPx + FOD_PRESS_MARGIN_PX
+        val left = (origin.x - r).coerceAtLeast(0f)
+        val top = (origin.y - r).coerceAtLeast(0f)
+        val right = (origin.x + r).coerceAtMost(width.toFloat())
+        val bottom = (origin.y + r).coerceAtMost(height.toFloat())
+        canvas.drawRect(left, top, right, bottom, paint)
+    }
+
     /** Smoothstep on a 0..1 clamped input. */
     private fun smooth(x: Float): Float {
         val t = x.coerceIn(0f, 1f)
@@ -546,11 +565,11 @@ class AuthRippleView(context: Context?, attrs: AttributeSet?) : View(context, at
         }
 
         if (drawWater) {
-            canvas.drawRect(0f, 0f, width.toFloat(), height.toFloat(), waterPaint)
+            drawPressArea(canvas, waterPaint)
         }
 
         if (drawStyle) {
-            canvas.drawRect(0f, 0f, width.toFloat(), height.toFloat(), stylePaint)
+            drawPressArea(canvas, stylePaint)
         }
 
         if (drawRipple) {
@@ -570,11 +589,19 @@ private const val WATER_DURATION_FULLSCREEN_MS = 3600L
 private const val WATER_FADE_IN_MS = 140f
 private const val WATER_FADE_OUT_START = 0.62f
 private const val WATER_WAVELENGTH_DP = 38f
-// Lens size at its largest, as a share of the screen width (the reference grows to ~0.4).
+// Press area: radius of the effect around the sensor, as a share of the screen width.
+// The reference video stays within about 30% of the width.
+private const val FOD_PRESS_RADIUS_FRACTION = 0.30f
+private const val FOD_PRESS_RADIUS_MIN_DP = 96f
+// Extra margin around the press area so the soft edges are not clipped.
+private const val FOD_PRESS_MARGIN_PX = 8f
+// Lens size inside the press area, as a share of the press radius.
+private const val FOD_LENS_OF_PRESS = 0.7f
+// Lens size at its largest, as a share of the screen width (fullscreen mode only).
 private const val WATER_LENS_MAX_FRACTION = 0.42f
 private const val WATER_DECAY = 1.0f
 private const val WATER_DECAY_FULLSCREEN = 0.6f
-// Share of the animation the wave front needs to reach the farthest corner.
+// Share of the animation the wave front needs to reach the press-area edge.
 private const val WATER_REACH_FRACTION = 0.72f
 // Fullscreen mode: front speed in screen diagonals per second.
 private const val WATER_FULLSCREEN_SPEED_DIAGS_PER_S = 0.42f

@@ -339,7 +339,7 @@ class FodStyleRippleShader internal constructor() : RuntimeShader(SHADER) {
                 float lensA = 0.0;
                 float3 lensRgb = float3(0.0);
                 if (in_lens_on > 0.5 && life > 0.0 && front > 1.0) {
-                    float lensR = min(front, in_size.x * 0.42);
+                    float lensR = min(front, in_maxr * 0.7);
                     float x = r / lensR;
                     lensA = (1.0 - smoothstep(0.94, 1.0, x)) * life;
                     float pull = -0.20 * (1.0 - x * x) * life;
