@@ -22,6 +22,7 @@ import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.keyframes
 import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.tween
 import androidx.compose.animation.core.spring
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -58,6 +59,9 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.draw.drawWithContent
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.layout.LayoutCoordinates
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.boundsInRoot
@@ -164,6 +168,17 @@ fun StatusBarDynamicIslandChip(
             .coerceAtLeast(56.dp)
 
     val collapseState = rememberDynamicIslandCollapseState(viewModel.isPopupShown)
+    // One-shot silver sheen that sweeps across the pill when a screen recording starts,
+    // as in the reference video.
+    val isRecordPopup = viewModel.popupContent is PopupContentModel.ScreenRecord
+    val sheenProgress = remember { Animatable(1f) }
+    LaunchedEffect(isRecordPopup) {
+        if (isRecordPopup) {
+            sheenProgress.snapTo(0f)
+            sheenProgress.animateTo(1f, animationSpec = tween(durationMillis = 900))
+        }
+    }
+
 
     Row(
         modifier =
@@ -177,6 +192,30 @@ fun StatusBarDynamicIslandChip(
                 .graphicsLayer { scaleX = collapseState.scale }
                 .clip(chipShape)
                 .background(Color.Black)
+                .drawWithContent {
+                    drawContent()
+                    val p = sheenProgress.value
+                    if (p < 1f) {
+                        val w = size.width
+                        val center = -w * 0.5f + (w * 2f) * p
+                        val band = w * 0.45f
+                        val alpha = (1f - p) * 0.55f
+                        drawRect(
+                            brush =
+                                Brush.horizontalGradient(
+                                    colors =
+                                        listOf(
+                                            Color.Transparent,
+                                            Color.White.copy(alpha = alpha),
+                                            Color.Transparent,
+                                        ),
+                                    startX = center - band,
+                                    endX = center + band,
+                                ),
+                            size = Size(w, size.height),
+                        )
+                    }
+                }
                 .border(width = 1.dp, color = chipOutline, shape = chipShape)
                 .combinedClickable(
                     onClick = hapticOnTap,
