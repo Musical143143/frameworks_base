@@ -89,6 +89,10 @@ public class TransitionAnimation {
     private static final int MAX_CLIP_REVEAL_TRANSITION_DURATION = 420;
     private static final int CLIP_REVEAL_TRANSLATION_Y_DP = 8;
     private static final int THUMBNAIL_APP_TRANSITION_DURATION = 336;
+    /** Duration of the icon-to-window open zoom, in milliseconds. */
+    static final int THUMBNAIL_OPEN_DURATION = 380;
+    /** Duration of the window-to-icon close zoom, in milliseconds. */
+    static final int THUMBNAIL_CLOSE_DURATION = 300;
 
     public static final int DEFAULT_APP_TRANSITION_DURATION = 336;
 
@@ -100,6 +104,14 @@ public class TransitionAnimation {
     /** Interpolator to be used for animations that respond directly to a touch */
     static final Interpolator TOUCH_RESPONSE_INTERPOLATOR =
             new PathInterpolator(0.3f, 0f, 0.1f, 1f);
+
+    /** Emphasized decelerate curve for the open zoom: quick start, soft landing. */
+    static final Interpolator OPEN_RESPONSE_INTERPOLATOR =
+            new PathInterpolator(0.05f, 0.7f, 0.1f, 1f);
+
+    /** Emphasized accelerate curve for the close zoom: gentle start, quick finish. */
+    static final Interpolator CLOSE_RESPONSE_INTERPOLATOR =
+            new PathInterpolator(0.3f, 0f, 0.8f, 0.15f);
 
     private static final String DEFAULT_PACKAGE = "android";
 
@@ -729,14 +741,14 @@ public class TransitionAnimation {
         if (scaleUp) {
             // Animation up from the thumbnail to the full screen
             Animation scale = new ScaleAnimation(1f, scaleW, 1f, scaleW, pivotX, pivotY);
-            scale.setInterpolator(TOUCH_RESPONSE_INTERPOLATOR);
-            scale.setDuration(THUMBNAIL_APP_TRANSITION_DURATION);
+            scale.setInterpolator(OPEN_RESPONSE_INTERPOLATOR);
+            scale.setDuration(THUMBNAIL_OPEN_DURATION);
             Animation alpha = new AlphaAnimation(1f, 0f);
             alpha.setInterpolator(mThumbnailFadeOutInterpolator);
-            alpha.setDuration(THUMBNAIL_APP_TRANSITION_DURATION);
+            alpha.setDuration(THUMBNAIL_OPEN_DURATION);
             Animation translate = createCurvedMotion(fromX, toX, fromY, toY);
-            translate.setInterpolator(TOUCH_RESPONSE_INTERPOLATOR);
-            translate.setDuration(THUMBNAIL_APP_TRANSITION_DURATION);
+            translate.setInterpolator(OPEN_RESPONSE_INTERPOLATOR);
+            translate.setDuration(THUMBNAIL_OPEN_DURATION);
 
             mTmpFromClipRect.set(0, 0, thumbWidthI, thumbHeightI);
             mTmpToClipRect.set(appRect);
@@ -755,8 +767,8 @@ public class TransitionAnimation {
             }
 
             Animation clipAnim = new ClipRectAnimation(mTmpFromClipRect, mTmpToClipRect);
-            clipAnim.setInterpolator(TOUCH_RESPONSE_INTERPOLATOR);
-            clipAnim.setDuration(THUMBNAIL_APP_TRANSITION_DURATION);
+            clipAnim.setInterpolator(OPEN_RESPONSE_INTERPOLATOR);
+            clipAnim.setDuration(THUMBNAIL_OPEN_DURATION);
 
             // This AnimationSet uses the Interpolators assigned above.
             AnimationSet set = new AnimationSet(false);
@@ -768,14 +780,14 @@ public class TransitionAnimation {
         } else {
             // Animation down from the full screen to the thumbnail
             Animation scale = new ScaleAnimation(scaleW, 1f, scaleW, 1f, pivotX, pivotY);
-            scale.setInterpolator(TOUCH_RESPONSE_INTERPOLATOR);
-            scale.setDuration(THUMBNAIL_APP_TRANSITION_DURATION);
+            scale.setInterpolator(CLOSE_RESPONSE_INTERPOLATOR);
+            scale.setDuration(THUMBNAIL_CLOSE_DURATION);
             Animation alpha = new AlphaAnimation(0f, 1f);
             alpha.setInterpolator(mThumbnailFadeInInterpolator);
-            alpha.setDuration(THUMBNAIL_APP_TRANSITION_DURATION);
+            alpha.setDuration(THUMBNAIL_CLOSE_DURATION);
             Animation translate = createCurvedMotion(toX, fromX, toY, fromY);
-            translate.setInterpolator(TOUCH_RESPONSE_INTERPOLATOR);
-            translate.setDuration(THUMBNAIL_APP_TRANSITION_DURATION);
+            translate.setInterpolator(CLOSE_RESPONSE_INTERPOLATOR);
+            translate.setDuration(THUMBNAIL_CLOSE_DURATION);
 
             // This AnimationSet uses the Interpolators assigned above.
             AnimationSet set = new AnimationSet(false);

@@ -72,6 +72,22 @@ public class DefaultSurfaceAnimator {
         animations.add(va);
     }
 
+    /**
+     * Builds an icon-to-window animator whose corner radius morphs from
+     * {@code startCornerRadius} to {@code endCornerRadius} while the surface moves.
+     */
+    static void buildMorphingSurfaceAnimation(@NonNull ArrayList<Animator> animations,
+            @NonNull Animation anim, @NonNull SurfaceControl leash,
+            @NonNull Runnable finishCallback, @NonNull TransactionPool pool,
+            @NonNull ShellExecutor mainExecutor, @Nullable Point position,
+            float startCornerRadius, float endCornerRadius, @Nullable Rect clipRect,
+            @Nullable TransitionAnimationHelper.RoundedContentPerDisplay roundedBounds) {
+        final DefaultAnimationAdapter adapter = new DefaultAnimationAdapter(anim, leash,
+                position, clipRect, endCornerRadius, roundedBounds);
+        adapter.mStartCornerRadius = startCornerRadius;
+        buildSurfaceAnimation(animations, anim, finishCallback, pool, mainExecutor, adapter);
+    }
+
     /** The animation adapter for buildSurfaceAnimation. */
     abstract static class AnimationAdapter implements ValueAnimator.AnimatorUpdateListener {
         @NonNull final SurfaceControl mLeash;
@@ -109,6 +125,8 @@ public class DefaultSurfaceAnimator {
         final float[] mMatrix = new float[9];
         final float[] mPrevMatrix = new float[9];
         float mPrevAlpha = Float.NaN;
+        float mPrevCornerRadius = Float.NaN;
+        float mStartCornerRadius = -1f;
         final Rect mPrevAnimClipRect = new Rect();
         boolean mCornerRadiusApplied = false;
         @NonNull final Animation mAnim;
@@ -177,7 +195,17 @@ public class DefaultSurfaceAnimator {
                     mAnimClipRect.inset(extensionInsets);
                     needCrop = true;
                 }
-                if (mCornerRadius > 0 && mAnim.hasRoundedCorners()) {
+                if (mStartCornerRadius >= 0) {
+                    // Icon transitions morph the corner radius along the motion.
+                    final float radius = mStartCornerRadius
+                            + (mCornerRadius - mStartCornerRadius)
+                            * animator.getAnimatedFraction();
+                    if (radius != mPrevCornerRadius) {
+                        t.setCornerRadius(leash, radius);
+                        mPrevCornerRadius = radius;
+                    }
+                    needCrop = true;
+                } else if (mCornerRadius > 0 && mAnim.hasRoundedCorners()) {
                     // Rounded corner can only be applied if a crop is set.
                     if (!mCornerRadiusApplied) {
                         t.setCornerRadius(leash, mCornerRadius);

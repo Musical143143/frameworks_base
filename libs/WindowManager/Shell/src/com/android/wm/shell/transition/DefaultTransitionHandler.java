@@ -66,6 +66,7 @@ import static com.android.internal.policy.TransitionAnimation.WALLPAPER_TRANSITI
 import static com.android.internal.policy.TransitionAnimation.WALLPAPER_TRANSITION_NONE;
 import static com.android.internal.policy.TransitionAnimation.WALLPAPER_TRANSITION_OPEN;
 import static com.android.wm.shell.Flags.enableDynamicInsetsForAppLaunch;
+import static com.android.wm.shell.transition.DefaultSurfaceAnimator.buildMorphingSurfaceAnimation;
 import static com.android.wm.shell.transition.DefaultSurfaceAnimator.buildSurfaceAnimation;
 import static com.android.wm.shell.transition.TransitionAnimationHelper.getTransitionBackgroundColorIfSet;
 import static com.android.wm.shell.transition.TransitionAnimationHelper.getTransitionTypeFromInfo;
@@ -140,6 +141,9 @@ public class DefaultTransitionHandler implements Transitions.TransitionHandler {
     private final TransitionAnimationHelper.RoundedContentTracker mRoundedContentBounds;
 
     /** Keeps track of the currently-running animations associated with each transition. */
+    private static final float ICON_CORNER_RATIO = 3f;
+    private static final long BACKGROUND_FADE_DURATION = 320;
+
     private final ArrayMap<IBinder, ArrayList<Animator>> mAnimations = new ArrayMap<>();
 
     private final CounterRotatorHelper mRotator = new CounterRotatorHelper();
@@ -649,8 +653,10 @@ public class DefaultTransitionHandler implements Transitions.TransitionHandler {
         }
 
         if (backgroundColorForTransition != 0) {
+            final boolean hasThumbnail = info.getChanges().stream()
+                    .anyMatch(c -> c.getAnimationOptions() != null);
             addBackgroundColor(info, backgroundColorForTransition, startTransaction,
-                    finishTransaction);
+                    finishTransaction, hasThumbnail ? animations : null, onAnimFinish);
         }
 
         startTransaction.apply();
@@ -694,7 +700,8 @@ public class DefaultTransitionHandler implements Transitions.TransitionHandler {
 
     private void addBackgroundColor(@NonNull TransitionInfo info,
             @ColorInt int color, @NonNull SurfaceControl.Transaction startTransaction,
-            @NonNull SurfaceControl.Transaction finishTransaction) {
+            @NonNull SurfaceControl.Transaction finishTransaction,
+            @Nullable ArrayList<Animator> animations, @Nullable Runnable onFinish) {
         final Color bgColor = Color.valueOf(color);
         final float[] colorArray = new float[] { bgColor.red(), bgColor.green(), bgColor.blue() };
 
@@ -716,6 +723,26 @@ public class DefaultTransitionHandler implements Transitions.TransitionHandler {
             startTransaction.setColor(backgroundSurface, colorArray)
                     .setLayer(backgroundSurface, -1)
                     .show(backgroundSurface);
+
+            if (animations != null && onFinish != null) {
+                // Fade the background in for an open and out for a close.
+                final boolean fadeIn = TransitionUtil.isOpeningType(info.getType());
+                final float from = fadeIn ? 0f : 1f;
+                final float to = fadeIn ? 1f : 0f;
+                startTransaction.setAlpha(backgroundSurface, from);
+                final ValueAnimator va = ValueAnimator.ofFloat(from, to);
+                va.setDuration(BACKGROUND_FADE_DURATION);
+                va.setInterpolator(Interpolators.EMPHASIZED);
+                DefaultSurfaceAnimator.setupValueAnimator(va, update -> {
+                    final SurfaceControl.Transaction t = mTransactionPool.acquire();
+                    t.setAlpha(backgroundSurface, (float) update.getAnimatedValue()).apply();
+                    mTransactionPool.release(t);
+                }, (vanim) -> mMainExecutor.execute(() -> {
+                    animations.remove(vanim);
+                    onFinish.run();
+                }));
+                animations.add(va);
+            }
 
             // Attaching the background surface to the transition root could unexpectedly make it
             // cover one of the split root tasks. To avoid this, put the background surface just
@@ -1027,9 +1054,12 @@ public class DefaultTransitionHandler implements Transitions.TransitionHandler {
         };
         a.restrictDuration(MAX_ANIMATION_DURATION);
         a.scaleCurrentDuration(mTransitionAnimationScaleSetting);
-        buildSurfaceAnimation(animations, a, wt.getSurface(), finisher, mTransactionPool,
-                mMainExecutor, change.getEndRelOffset(), cornerRadius, change.getEndAbsBounds(),
-                getRoundedContentBounds(change));
+        final float iconRadius = cornerRadius * ICON_CORNER_RATIO;
+        final boolean scaleUp = options.getType() == ANIM_THUMBNAIL_SCALE_UP;
+        buildMorphingSurfaceAnimation(animations, a, wt.getSurface(), finisher,
+                mTransactionPool, mMainExecutor, change.getEndRelOffset(),
+                scaleUp ? iconRadius : cornerRadius, scaleUp ? cornerRadius : iconRadius,
+                change.getEndAbsBounds(), getRoundedContentBounds(change));
     }
 
     private static int getWallpaperTransitType(TransitionInfo info) {
