@@ -278,6 +278,11 @@ class AuthRippleView(context: Context?, attrs: AttributeSet?) : View(context, at
      */
     fun startUnlockedRipple(onAnimationEnd: Runnable?) {
         unlockedRippleAnimator?.cancel()
+        // Stop the dwell pulse so its orange circle does not stay on screen over the unlock effect.
+        dwellPulseOutAnimator?.cancel()
+        retractDwellAnimator?.cancel()
+        fadeDwellAnimator?.cancel()
+        drawDwell = false
 
         val fodStyle = getFodAnimStyle()
         if (fodStyle >= FOD_ANIM_FIRST_CUSTOM && fodStyle <= FOD_ANIM_LAST_CUSTOM) {
