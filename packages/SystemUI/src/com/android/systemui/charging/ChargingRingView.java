@@ -37,7 +37,7 @@ import android.view.animation.LinearInterpolator;
 final class ChargingRingView extends View {
     private static final long ENTRY_DURATION_MS = 600;
     private static final long SWEEP_DURATION_MS = 1600;
-    private static final float RING_RADIUS_FRACTION = 0.19f;
+    static final float RING_RADIUS_FRACTION = 0.19f;
     private static final float ARC_SPAN_DEGREES = 96f;
     private static final int RING_COLOR = 0xFFE8F1FF;
     private static final int GLOW_COLOR = 0xFF9CC8FF;

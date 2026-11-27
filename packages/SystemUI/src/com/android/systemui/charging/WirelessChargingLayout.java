@@ -24,6 +24,8 @@ import android.graphics.Color;
 import android.provider.Settings;
 import android.os.UserHandle;
 import android.util.AttributeSet;
+import android.view.Gravity;
+import android.view.LayoutInflater;
 import android.util.TypedValue;
 import android.view.ContextThemeWrapper;
 import android.view.View;
@@ -57,6 +59,13 @@ final class WirelessChargingLayout extends FrameLayout {
 
     private RippleView mRippleView;
     private boolean mWiredCharging;
+    private View mRingModeGroup;
+
+    private static final int MODE_LOW_TEMP = 0;
+    private static final int MODE_SMART = 1;
+    private static final int MODE_HYPER = 2;
+    private static final String WIRED_CHARGING_MODE = "wired_charging_mode";
+    private static final float RING_MODE_GAP_DP = 28f;
     private RippleShader.SizeAtProgress[] mSizeAtProgressArray;
 
     WirelessChargingLayout(Context context, int transmittingBatteryLevel, int batteryLevel,
@@ -161,6 +170,27 @@ final class WirelessChargingLayout extends FrameLayout {
         if (ringStyle) {
             findViewById(R.id.wireless_charging_ripple).setVisibility(GONE);
             addView(new ChargingRingView(context), 0);
+
+            mRingModeGroup = LayoutInflater.from(new ContextThemeWrapper(context, style))
+                    .inflate(R.layout.charging_ring_mode_pill, this, false);
+            bindRingMode(context, mRingModeGroup);
+            addView(mRingModeGroup, new FrameLayout.LayoutParams(
+                    FrameLayout.LayoutParams.WRAP_CONTENT, FrameLayout.LayoutParams.WRAP_CONTENT,
+                    Gravity.CENTER));
+            mRingModeGroup.animate()
+                    .alpha(1f)
+                    .setStartDelay(context.getResources().getInteger(
+                            R.integer.wireless_charging_anim_opacity_offset))
+                    .setDuration(context.getResources().getInteger(
+                            R.integer.wireless_charging_battery_level_text_opacity_duration))
+                    .start();
+            mRingModeGroup.animate()
+                    .alpha(0f)
+                    .setStartDelay(context.getResources().getInteger(
+                            R.integer.wireless_charging_fade_offset))
+                    .setDuration(context.getResources().getInteger(
+                            R.integer.wireless_charging_fade_duration))
+                    .start();
         }
 
         final TextView percentage = findViewById(R.id.wireless_charging_percentage);
@@ -405,8 +435,27 @@ final class WirelessChargingLayout extends FrameLayout {
         animatorSetIcon.start();
     }
 
+    private void bindRingMode(Context context, View group) {
+        int mode = Settings.System.getIntForUser(context.getContentResolver(),
+                WIRED_CHARGING_MODE, MODE_SMART, UserHandle.USER_CURRENT);
+        if (mode < MODE_LOW_TEMP || mode > MODE_HYPER) {
+            mode = MODE_SMART;
+        }
+        group.findViewById(R.id.charging_ring_mode_low_temp).setSelected(mode == MODE_LOW_TEMP);
+        group.findViewById(R.id.charging_ring_mode_smart).setSelected(mode == MODE_SMART);
+        group.findViewById(R.id.charging_ring_mode_hyper).setSelected(mode == MODE_HYPER);
+    }
+
     @Override
     protected void onLayout(boolean changed, int left, int top, int right, int bottom) {
+        if (mRingModeGroup != null) {
+            // Place the mode pill just below the ring.
+            float ringRadius = Math.min(getMeasuredWidth(), getMeasuredHeight())
+                    * ChargingRingView.RING_RADIUS_FRACTION;
+            float gap = TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_DIP, RING_MODE_GAP_DP,
+                    getResources().getDisplayMetrics());
+            mRingModeGroup.setTranslationY(ringRadius + gap);
+        }
         if (mRippleView != null) {
             int width = getMeasuredWidth();
             int height = getMeasuredHeight();
