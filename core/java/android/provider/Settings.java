@@ -7797,6 +7797,13 @@ public final class Settings {
         public static final String WIRELESS_CHARGING_RIPPLE_SHAPE = "wireless_charging_ripple_shape";
 
         /**
+         * Whether the glowing charging ring animation is shown. 1 = ring, 0 = original ripple.
+         * @hide
+         */
+        public static final String CHARGING_RING_ANIMATION_ENABLED =
+                "charging_ring_animation_enabled";
+
+        /**
          * @hide
          */
         @Readable
