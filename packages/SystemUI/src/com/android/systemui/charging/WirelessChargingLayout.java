@@ -56,11 +56,13 @@ final class WirelessChargingLayout extends FrameLayout {
     private static final int RIPPLE_SHAPE_RING = 2;
 
     private RippleView mRippleView;
+    private boolean mWiredCharging;
     private RippleShader.SizeAtProgress[] mSizeAtProgressArray;
 
     WirelessChargingLayout(Context context, int transmittingBatteryLevel, int batteryLevel,
-            boolean isDozing, RippleShape rippleShape) {
+            boolean isDozing, RippleShape rippleShape, boolean wiredCharging) {
         super(context);
+        mWiredCharging = wiredCharging;
         init(context, null, transmittingBatteryLevel, batteryLevel, isDozing, rippleShape);
     }
 
@@ -154,7 +156,8 @@ final class WirelessChargingLayout extends FrameLayout {
 
         // Ring style replaces the ripple with the glowing ring from the reference design. It is
         // only selected by an explicit setting value, so the default ripple is unchanged.
-        final boolean ringStyle = shapeValue == RIPPLE_SHAPE_RING;
+        // Wired charging always uses the ring; wireless charging uses it only when selected.
+        final boolean ringStyle = mWiredCharging || shapeValue == RIPPLE_SHAPE_RING;
         if (ringStyle) {
             findViewById(R.id.wireless_charging_ripple).setVisibility(GONE);
             addView(new ChargingRingView(context), 0);

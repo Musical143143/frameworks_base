@@ -2002,7 +2002,9 @@ public class CentralSurfacesImpl implements CoreStartable, CentralSurfaces,
                         mTopUiController.setRequestTopUi(false, TAG);
                     }
                 }, /* isDozing= */ false, RippleShape.CIRCLE,
-                sUiEventLogger, mWindowManager, mWindowManagerProvider).show(animationDelay);
+                sUiEventLogger, mWindowManager, mWindowManagerProvider,
+                /* wiredCharging= */ transmittingBatteryLevel == UNKNOWN_BATTERY_LEVEL
+                        && !mBatteryController.isPluggedInWireless()).show(animationDelay);
     }
 
     @Override

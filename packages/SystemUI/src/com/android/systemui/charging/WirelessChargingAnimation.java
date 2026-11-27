@@ -61,10 +61,10 @@ public class WirelessChargingAnimation {
     private WirelessChargingAnimation(@NonNull Context context, @Nullable Looper looper,
             int transmittingBatteryLevel, int batteryLevel, Callback callback, boolean isDozing,
             RippleShape rippleShape, UiEventLogger uiEventLogger, WindowManager windowManager,
-            WindowManagerProvider windowManagerProvider) {
+            WindowManagerProvider windowManagerProvider, boolean wiredCharging) {
         mCurrentWirelessChargingView = new WirelessChargingView(context, looper,
                 transmittingBatteryLevel, batteryLevel, callback, isDozing,
-                rippleShape, uiEventLogger, windowManager, windowManagerProvider);
+                rippleShape, uiEventLogger, windowManager, windowManagerProvider, wiredCharging);
     }
 
     /**
@@ -77,9 +77,25 @@ public class WirelessChargingAnimation {
             Callback callback, boolean isDozing, RippleShape rippleShape,
             UiEventLogger uiEventLogger, WindowManager windowManager,
             WindowManagerProvider windowManagerProvider) {
+        return makeWirelessChargingAnimation(context, looper, transmittingBatteryLevel,
+                batteryLevel, callback, isDozing, rippleShape, uiEventLogger, windowManager,
+                windowManagerProvider, /* wiredCharging= */ false);
+    }
+
+    /**
+     * Same as above, but {@code wiredCharging} selects the glowing ring style used for wired
+     * charging.
+     *
+     * @hide
+     */
+    public static WirelessChargingAnimation makeWirelessChargingAnimation(@NonNull Context context,
+            @Nullable Looper looper, int transmittingBatteryLevel, int batteryLevel,
+            Callback callback, boolean isDozing, RippleShape rippleShape,
+            UiEventLogger uiEventLogger, WindowManager windowManager,
+            WindowManagerProvider windowManagerProvider, boolean wiredCharging) {
         return new WirelessChargingAnimation(context, looper, transmittingBatteryLevel,
                 batteryLevel, callback, isDozing, rippleShape, uiEventLogger, windowManager,
-                windowManagerProvider);
+                windowManagerProvider, wiredCharging);
     }
 
     /**
@@ -130,10 +146,11 @@ public class WirelessChargingAnimation {
         public WirelessChargingView(Context context, @Nullable Looper looper,
                 int transmittingBatteryLevel, int batteryLevel, Callback callback,
                 boolean isDozing, RippleShape rippleShape, UiEventLogger uiEventLogger,
-                WindowManager windowManager, WindowManagerProvider windowManagerProvider) {
+                WindowManager windowManager, WindowManagerProvider windowManagerProvider,
+                boolean wiredCharging) {
             mCallback = callback;
             mNextView = new WirelessChargingLayout(context, transmittingBatteryLevel, batteryLevel,
-                    isDozing, rippleShape);
+                    isDozing, rippleShape, wiredCharging);
             mGravity = Gravity.CENTER_HORIZONTAL | Gravity.CENTER;
             mUiEventLogger = uiEventLogger;
             mWM = windowManager;
