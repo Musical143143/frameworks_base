@@ -57,6 +57,8 @@ final class WirelessChargingLayout extends FrameLayout {
     private static final int RIPPLE_SHAPE_ROUNDED_BOX = 1;
     private static final int RIPPLE_SHAPE_RING = 2;
     private static final boolean USE_RING_STYLE_FOR_ALL_CHARGING = true;
+    private static final int STYLE_TIDE = 1;
+    private static final int STYLE_LIGHTCLOUD = ChargingRingView.STYLE_LIGHTCLOUD;
 
     private RippleView mRippleView;
     private boolean mWiredCharging;
@@ -169,11 +171,19 @@ final class WirelessChargingLayout extends FrameLayout {
         // The ring is the charging animation for every charge type.
         final boolean ringEnabled = Settings.System.getIntForUser(context.getContentResolver(),
                 Settings.System.CHARGING_RING_ANIMATION_ENABLED, 1, UserHandle.USER_CURRENT) == 1;
-        final boolean ringStyle = ringEnabled && (USE_RING_STYLE_FOR_ALL_CHARGING
-                || mWiredCharging || shapeValue == RIPPLE_SHAPE_RING);
+        final int chargingStyle = Settings.System.getIntForUser(context.getContentResolver(),
+                Settings.System.CHARGING_ANIMATION_STYLE, ChargingRingView.STYLE_ORIGIN,
+                UserHandle.USER_CURRENT);
+        final boolean ringStyle = ringEnabled && chargingStyle != STYLE_TIDE
+                && (USE_RING_STYLE_FOR_ALL_CHARGING || mWiredCharging
+                || shapeValue == RIPPLE_SHAPE_RING);
         if (ringStyle) {
             findViewById(R.id.wireless_charging_ripple).setVisibility(GONE);
-            addView(new ChargingRingView(context), 0);
+            final int ringView = (chargingStyle == ChargingRingView.STYLE_ENERGY
+                    || chargingStyle == ChargingRingView.STYLE_FEATHERS
+                    || chargingStyle == ChargingRingView.STYLE_LIGHTCLOUD)
+                    ? chargingStyle : ChargingRingView.STYLE_ORIGIN;
+            addView(new ChargingRingView(context, ringView), 0);
 
             mRingModeGroup = LayoutInflater.from(new ContextThemeWrapper(context, style))
                     .inflate(R.layout.charging_ring_mode_pill, this, false);
@@ -200,6 +210,7 @@ final class WirelessChargingLayout extends FrameLayout {
         final TextView percentage = findViewById(R.id.wireless_charging_percentage);
         final ImageView chargingIcon = findViewById(R.id.wireless_charging_icon);
 
+
         if (batteryLevel != WirelessChargingAnimation.UNKNOWN_BATTERY_LEVEL) {
             int dynamicColor;
 
@@ -209,7 +220,9 @@ final class WirelessChargingLayout extends FrameLayout {
                 dynamicColor = Utils.getColorAttr(context, android.R.attr.colorAccent).getDefaultColor();
             }
         
-            percentage.setTextColor(dynamicColor);
+            // The Lightcloud pill is light, so its percentage needs dark text.
+            percentage.setTextColor(ringStyle && chargingStyle == STYLE_LIGHTCLOUD
+                    ? 0xFF111111 : dynamicColor);
             percentage.setText(NumberFormat.getPercentInstance().format(batteryLevel / 100f));
             percentage.setAlpha(0);
         

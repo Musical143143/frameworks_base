@@ -1989,6 +1989,11 @@ public class CentralSurfacesImpl implements CoreStartable, CentralSurfaces,
         if (!isChargingAnimationSettingEnabled()) {
             return;
         }
+        // Style 5 is "None": no charging overlay at all.
+        if (Settings.System.getIntForUser(mContext.getContentResolver(),
+                Settings.System.CHARGING_ANIMATION_STYLE, 0, UserHandle.USER_CURRENT) == 5) {
+            return;
+        }
         WirelessChargingAnimation.makeWirelessChargingAnimation(mContext, null,
                 transmittingBatteryLevel, batteryLevel,
                 new WirelessChargingAnimation.Callback() {

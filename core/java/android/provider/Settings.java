@@ -7804,6 +7804,13 @@ public final class Settings {
                 "charging_ring_animation_enabled";
 
         /**
+         * Charging animation style: 0 = Origin, 1 = Tide, 2 = Energy, 3 = Feathers,
+         * 4 = Lightcloud, 5 = None.
+         * @hide
+         */
+        public static final String CHARGING_ANIMATION_STYLE = "charging_animation_style";
+
+        /**
          * @hide
          */
         @Readable
