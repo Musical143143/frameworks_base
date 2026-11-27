@@ -4603,11 +4603,11 @@
     <!-- Subtitle on the wired charging ring. Brand name, do not translate. [CHAR LIMIT=NONE] -->
     <string name="charging_ring_subtitle">ALL-Round FastCharge</string>
     <!-- Badge on the wired charging ring showing max wattage. [CHAR LIMIT=NONE] -->
-    <string name="charging_ring_badge">MAX 45W</string>
+    <string name="charging_ring_badge">MAX 100W</string>
     <!-- Charging mode name: low temperature charging. [CHAR LIMIT=NONE] -->
     <string name="charging_ring_mode_low_temp">Low-Temp</string>
     <!-- Charging mode name: smart charging. [CHAR LIMIT=NONE] -->
     <string name="charging_ring_mode_smart">Smart</string>
-    <!-- Charging mode name: hyper (fastest) charging. [CHAR LIMIT=NONE] -->
-    <string name="charging_ring_mode_hyper">Hyper</string>
+    <!-- Charging mode name: super (fastest) charging. [CHAR LIMIT=NONE] -->
+    <string name="charging_ring_mode_hyper">Super</string>
 </resources>

@@ -56,6 +56,7 @@ final class WirelessChargingLayout extends FrameLayout {
     private static final int RIPPLE_SHAPE_CIRCLE = 0;
     private static final int RIPPLE_SHAPE_ROUNDED_BOX = 1;
     private static final int RIPPLE_SHAPE_RING = 2;
+    private static final boolean USE_RING_STYLE_FOR_ALL_CHARGING = true;
 
     private RippleView mRippleView;
     private boolean mWiredCharging;
@@ -165,8 +166,9 @@ final class WirelessChargingLayout extends FrameLayout {
 
         // Ring style replaces the ripple with the glowing ring from the reference design. It is
         // only selected by an explicit setting value, so the default ripple is unchanged.
-        // Wired charging always uses the ring; wireless charging uses it only when selected.
-        final boolean ringStyle = mWiredCharging || shapeValue == RIPPLE_SHAPE_RING;
+        // The ring is the charging animation for every charge type.
+        final boolean ringStyle = USE_RING_STYLE_FOR_ALL_CHARGING
+                || mWiredCharging || shapeValue == RIPPLE_SHAPE_RING;
         if (ringStyle) {
             findViewById(R.id.wireless_charging_ripple).setVisibility(GONE);
             addView(new ChargingRingView(context), 0);
