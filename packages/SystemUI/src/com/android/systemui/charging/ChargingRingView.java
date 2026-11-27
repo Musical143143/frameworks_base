@@ -22,6 +22,7 @@ import android.graphics.BlurMaskFilter;
 import android.graphics.Canvas;
 import android.graphics.Paint;
 import android.graphics.RectF;
+import android.graphics.SweepGradient;
 import android.util.TypedValue;
 import android.view.View;
 import android.view.animation.LinearInterpolator;
@@ -46,7 +47,8 @@ final class ChargingRingView extends View {
     private static final float ARC_SPAN_DEGREES = 96f;
     private static final int FILL_COLOR = 0x33000000;
 
-    private static final int ORIGIN_RING_COLOR = 0xFFE8F1FF;
+    private static final int[] ORIGIN_RING_COLORS = {
+            0xFFFF9A3C, 0xFFFF5C8A, 0xFF7A6CFF, 0xFF3FB6FF, 0xFFFF9A3C};
     private static final int ORIGIN_GLOW_COLOR = 0xFF9CC8FF;
     private static final int ORIGIN_ARC_COLOR = 0xFFFFFFFF;
     private static final int ENERGY_RING_COLOR = 0xFFFFB35A;
@@ -62,6 +64,7 @@ final class ChargingRingView extends View {
     private final Paint mGlowPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
     private final Paint mArcPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
     private final RectF mOval = new RectF();
+    private SweepGradient mOriginRingShader;
 
     private float mEntryProgress;
     private float mSweepAngle;
@@ -89,6 +92,12 @@ final class ChargingRingView extends View {
         mArcPaint.setMaskFilter(new BlurMaskFilter(dp(context, 3f), BlurMaskFilter.Blur.NORMAL));
 
         setWillNotDraw(false);
+    }
+
+    @Override
+    protected void onSizeChanged(int w, int h, int oldw, int oldh) {
+        super.onSizeChanged(w, h, oldw, oldh);
+        mOriginRingShader = new SweepGradient(w * 0.5f, h * 0.5f, ORIGIN_RING_COLORS, null);
     }
 
     @Override
@@ -170,8 +179,11 @@ final class ChargingRingView extends View {
 
         setStroke(mGlowPaint, ORIGIN_GLOW_COLOR, scale * 0.55f);
         canvas.drawOval(mOval, mGlowPaint);
-        setStroke(mRingPaint, ORIGIN_RING_COLOR, scale);
+        mRingPaint.setColor(ORIGIN_RING_COLORS[0]);
+        mRingPaint.setShader(mOriginRingShader);
+        mRingPaint.setAlpha(alpha(scale));
         canvas.drawOval(mOval, mRingPaint);
+        mRingPaint.setShader(null);
 
         mArcPaint.setAlpha(alpha(scale));
         canvas.drawArc(mOval, mSweepAngle - 90f, ARC_SPAN_DEGREES, false, mArcPaint);
